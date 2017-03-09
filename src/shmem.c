@@ -23,7 +23,7 @@ struct shm_host_ptr* shmem_new(const char* name, size_t size)
 	__fd = shm_open(name, O_RDWR | O_CREAT, S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP|S_IROTH|S_IWOTH);
 	if(__fd < 0)
 		goto error_end;
-
+		
 	if(ftruncate(__fd, size + sizeof(struct _shm_addr)) < 0)
 		goto error_end;
 	
@@ -53,14 +53,11 @@ error_end:
 	perror("shmem_new error occured.");
 	if(__ptr)
 	{
-		if(shm_unlink(__ptr->name) < 0)
-		perror("shm_unlink error.");
 		shmem_destroy(__ptr);
 	}
 	else if(__fd > 0)
 	{
 		close(__fd);
-		shm_unlink(name);
 	}
 
 	return NULL; 
@@ -68,11 +65,10 @@ error_end:
 
 void shmem_destroy(struct shm_host_ptr* ptr)
 {
-	if(shm_unlink(ptr->name) < 0)
-		perror("shm_unlink error.");
-
 	if(ptr == NULL)
 		goto error_end;
+
+	shm_unlink(ptr->name);
 
 	if(ptr->_the_addr._addr == NULL)
 		goto error_end;
@@ -127,7 +123,6 @@ error_end:
 	}
 	else if(__fd > 0)
 	{
-		shm_unlink(name);
 		close(__fd);
 	}
 
