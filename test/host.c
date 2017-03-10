@@ -11,6 +11,11 @@ int main(void)
 	if(!__ptr)
 		return -1;
 
+	__ptr = shmem_new(share_memory_name, 1024);
+
+	if(!__ptr)
+		return -1;
+
 	sprintf((char*)__ptr->_the_addr._addr, "hello world.");
 
 	__read_ptr = shmem_open(share_memory_name);

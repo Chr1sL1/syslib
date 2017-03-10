@@ -10,17 +10,12 @@
 struct shm_host_ptr* shmem_new(const char* name, size_t size)
 {
 	int __fd = 0;
-	int __test_fd = 0;
 	struct shm_host_ptr* __ptr = NULL;
 
 	if(strlen(name) > SHMEM_NAME_LEN - 1)
 		goto error_end;
 
-	__test_fd = shm_open(name, O_RDWR, S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP|S_IROTH|S_IWOTH);
-	if(__test_fd > 0)
-		goto error_end;
-
-	__fd = shm_open(name, O_RDWR | O_CREAT, S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP|S_IROTH|S_IWOTH);
+	__fd = shm_open(name, O_RDWR | O_CREAT | O_EXCL, S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP|S_IROTH|S_IWOTH);
 	if(__fd < 0)
 		goto error_end;
 		
