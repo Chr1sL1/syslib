@@ -25,5 +25,6 @@ struct rbnode* rb_remove(struct rbtree* t, int key);
 //debug issue
 void pre_order(struct rbnode* node);
 void in_order(struct rbnode* node);
+void post_order(struct rbnode* node);
 
 #endif

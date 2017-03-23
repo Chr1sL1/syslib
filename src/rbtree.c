@@ -12,7 +12,6 @@ static void _cp_color(struct rbnode* to, struct rbnode* from)
 		to->isblack = from ? from->isblack : 1;
 }
 
-
 void rb_fillnew(struct rbtree* t, struct rbnode* node)
 {
 	if(node)
@@ -97,10 +96,11 @@ static void _fix_insert(struct rbtree* t, struct rbnode* node)
 	p = node->parent;
 	if(!p) goto error_ret;
 
-	g = p->parent;
-
 	while(is_red(node->parent))
 	{
+		p = node->parent;
+		g = p->parent;
+
 		if(p == g->lchild)
 		{
 			u = g->rchild;
@@ -111,17 +111,19 @@ static void _fix_insert(struct rbtree* t, struct rbnode* node)
 				set_red(g);
 				node = g;
 			}
-			else if(node == p->rchild)		// zigzag
+			else
 			{
-				node = p;
-				_left_rotate(p);
-			}
+				if(node == p->rchild)		// zigzag
+				{
+					_left_rotate(node->parent);
+				}
+				node = node->parent;
 
-			set_black(node->parent);
-			if(node->parent)
-			{
-				set_red(node->parent->parent);
-				_right_rotate(node->parent->parent);
+				set_black(node);
+				set_red(node->parent);
+				_right_rotate(node->parent);
+
+				break;
 			}
 		}
 		else
@@ -134,19 +136,22 @@ static void _fix_insert(struct rbtree* t, struct rbnode* node)
 				set_red(g);
 				node = g;
 			}
-			else if(node == p->lchild)		// zigzag
+			else
 			{
-				node = p;
-				_right_rotate(p);
-			}
+				if(node == p->lchild)		// zigzag
+				{
+					_right_rotate(node->parent);
+				}
+				node = node->parent;
 
-			set_black(node->parent);
-			if(node->parent)
-			{
-				set_red(node->parent->parent);
-				_left_rotate(node->parent->parent);
+				set_black(node);
+				set_red(node->parent);
+				_left_rotate(node->parent);
+
+				break;
 			}
 		}
+
 	}
 
 	while(node)
@@ -157,6 +162,7 @@ static void _fix_insert(struct rbtree* t, struct rbnode* node)
 		node = node->parent;
 	}
 	t->root = node;
+	set_black(t->root);
 
 error_ret:
 	return;
@@ -217,20 +223,41 @@ error_ret:
 	return NULL;
 }
 
-static void _transplant(struct rbtree* t, struct rbnode* rmnode, struct rbnode* sucnode)
+static void _link(struct rbnode* p, struct rbnode* lc, struct rbnode* rc)
+{
+	if(!p) goto error_ret;
+	if(p == lc || p == rc) goto error_ret;
+
+	p->lchild = lc;
+	p->rchild = rc;
+
+	lc ? (lc->parent = p) : 0;
+	rc ? (rc->parent = p) : 0;
+
+error_ret:
+	return;
+}
+
+static void _transplant(struct rbtree* t, struct rbnode* rm, struct rbnode* sc)
 {
 	if(!t->root) goto error_ret;
-	if(!rmnode) goto error_ret;
-	if(!sucnode) goto error_ret;
+	if(!rm) goto error_ret;
 
-	if(!rmnode->parent)	
-		t->root = sucnode;
-	else if(rmnode == rmnode->parent->lchild)
-		rmnode->lchild = sucnode;
-	else if(rmnode == rmnode->parent->rchild)
-		rmnode->rchild = sucnode;
+	if(!rm->parent)	 // root
+	{
+		_link(sc, rm->lchild, rm->rchild);
+		t->root = sc;
+		if(sc) sc->parent = NULL;
+	}
+	else if(rm == rm->parent->lchild)
+		_link(rm->parent, sc, rm->parent->rchild);
+	else if(rm == rm->parent->rchild)
+		_link(rm->parent, rm->parent->lchild, sc);
 
-	sucnode->parent = rmnode->parent;
+
+	rm->parent = NULL;
+	rm->lchild = NULL;
+	rm->rchild = NULL;
 
 error_ret:
 	return;
@@ -251,6 +278,7 @@ static struct rbnode* _minnode(struct rbnode* subroot)
 error_ret:
 	return NULL;
 }
+
 
 static void _fix_remove(struct rbtree* t, struct rbnode* x)
 {
@@ -345,40 +373,36 @@ struct rbnode* rb_remove(struct rbtree* t, int key)
 	if(!z->lchild)
 	{
 		x = z->rchild;
-		_transplant(t, z, z->rchild);
+		_transplant(t, z, x);
 	}
 	else if(!z->rchild)
 	{
 		x = z->lchild;
-		_transplant(t, z, z->lchild);
+		_transplant(t, z, x);
 	}
-	else
+
+	if(z->lchild && z->rchild)
 	{
 		y = _minnode(z->rchild);
 		node_is_black = is_black(y);
+
 		x = y->rchild;
 		
-		if(z != y->parent)
-			_transplant(t, y, x);
+		_transplant(t, y, x);
 		_transplant(t, z, y);
-
-		y->lchild = z->lchild;
-		if(y->lchild)
-			y->lchild->parent = y;
-
-		y->isblack = z->isblack;
+		_cp_color(y, z);
 	}
 
 	if(node_is_black)
 		_fix_remove(t, x);
 
-	if(z->parent)
-	{
-		if(z == z->parent->lchild)
-			z->parent->lchild = NULL;
-		else if(z == z->parent->rchild)
-			z->parent->rchild = NULL;
-	}
+//	if(z->parent)
+//	{
+//		if(z == z->parent->lchild)
+//			z->parent->lchild = NULL;
+//		else if(z == z->parent->rchild)
+//			z->parent->rchild = NULL;
+//	}
 
 	z->parent = NULL;
 	z->lchild = NULL;
@@ -412,4 +436,14 @@ void in_order(struct rbnode* node)
 	in_order(node->lchild);
 	printf("%d(%d),", node->key, node->isblack);
 	in_order(node->rchild);
+}
+
+void post_order(struct rbnode* node)
+{
+	if(!node)
+		return;
+
+	pre_order(node->lchild);
+	pre_order(node->rchild);
+	printf("%d(%d),", node->key, node->isblack);
 }
