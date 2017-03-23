@@ -279,7 +279,7 @@ error_ret:
 	return NULL;
 }
 
-
+// to be fixed.
 static void _fix_remove(struct rbtree* t, struct rbnode* x)
 {
 	struct rbnode* w = NULL;
