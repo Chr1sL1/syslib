@@ -418,32 +418,35 @@ error_ret:
 	return NULL;
 }
 
-void pre_order(struct rbnode* node)
+void pre_order(struct rbnode* node, order_function f)
 {
-	if(!node)
+	if(!node || !f)
 		return;
 
-	printf("%d(%d),", node->key, node->isblack);
-	pre_order(node->lchild);
-	pre_order(node->rchild);
+//	printf("%d(%d),", node->key, node->isblack);
+	pre_order(node->lchild, f);
+	pre_order(node->rchild, f);
+	f(node);
 }
 
-void in_order(struct rbnode* node)
+void in_order(struct rbnode* node, order_function f)
 {
-	if(!node)
+	if(!node || !f)
 		return;
 
-	in_order(node->lchild);
-	printf("%d(%d),", node->key, node->isblack);
-	in_order(node->rchild);
+	in_order(node->lchild, f);
+//	printf("%d(%d),", node->key, node->isblack);
+	f(node);
+	in_order(node->rchild, f);
 }
 
-void post_order(struct rbnode* node)
+void post_order(struct rbnode* node, order_function f)
 {
-	if(!node)
+	if(!node || !f)
 		return;
 
-	pre_order(node->lchild);
-	pre_order(node->rchild);
-	printf("%d(%d),", node->key, node->isblack);
+	post_order(node->lchild, f);
+	post_order(node->rchild, f);
+	f(node);
+//	printf("%d(%d),", node->key, node->isblack);
 }

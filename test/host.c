@@ -37,6 +37,13 @@ void test_link(void)
 
 }
 
+void print_node(struct rbnode* node)
+{
+	if(node)
+		printf("(%d):%d,", node->key, node->isblack);
+
+}
+
 int main(void)
 {
 //	test_link();
@@ -78,11 +85,9 @@ int main(void)
 
 		rb_insert(&test_tree, node);
 
-		pre_order(test_tree.root);
+		pre_order(test_tree.root, print_node);
 		printf("\n");
-		in_order(test_tree.root);
-		printf("\n");
-		post_order(test_tree.root);
+		in_order(test_tree.root, print_node);
 		printf("\n---size %d---\n", test_tree.size);
 	}
 
@@ -93,9 +98,9 @@ int main(void)
 
 		if(node)
 		{
-			pre_order(test_tree.root);
-			printf("\n--------\n");
-			in_order(test_tree.root);
+			pre_order(test_tree.root, print_node);
+			printf("\n");
+			in_order(test_tree.root, print_node);
 			printf("\n---size %d---\n", test_tree.size);
 
 			free(node);
