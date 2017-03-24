@@ -5,11 +5,20 @@
 #define is_red(node)	((node) && !(node)->isblack)
 #define set_black(node)	((node) ? (node)->isblack = 1 : 0)
 #define set_red(node)	((node) ? (node)->isblack = 0 : 0)
+#define l_child(node)	((node) ? (node)->lchild : NULL)
+#define r_child(node)	((node) ? (node)->rchild : NULL)
 
 static void _cp_color(struct rbnode* to, struct rbnode* from)
 {
 	if(to)
 		to->isblack = from ? from->isblack : 1;
+}
+
+static void _swap_value(int* v1, int* v2)
+{
+	int tmp = *v1;
+	*v1 = *v2;
+	*v2 = tmp;
 }
 
 void rb_fillnew(struct rbtree* t, struct rbnode* node)
@@ -88,7 +97,7 @@ error_ret:
 }
 
 
-static void _fix_insert(struct rbtree* t, struct rbnode* node)
+static void _fix_rr(struct rbtree* t, struct rbnode* node)
 {
 	struct rbnode* p = NULL, *g = NULL, *u = NULL;
 	if(!node) goto error_ret;
@@ -117,7 +126,8 @@ static void _fix_insert(struct rbtree* t, struct rbnode* node)
 				{
 					_left_rotate(node->parent);
 				}
-				node = node->parent;
+				else
+					node = node->parent;
 
 				set_black(node);
 				set_red(node->parent);
@@ -142,7 +152,8 @@ static void _fix_insert(struct rbtree* t, struct rbnode* node)
 				{
 					_right_rotate(node->parent);
 				}
-				node = node->parent;
+				else
+					node = node->parent;
 
 				set_black(node);
 				set_red(node->parent);
@@ -189,7 +200,7 @@ int rb_insert(struct rbtree* t, struct rbnode* node)
 
 		node->parent = hot;
 
-		_fix_insert(t, node);
+		_fix_rr(t, node);
 	}
 	else
 		t->root = node;
@@ -263,7 +274,8 @@ error_ret:
 	return;
 }
 
-static struct rbnode* _minnode(struct rbnode* subroot)
+
+static struct rbnode* _succ(struct rbnode* subroot)
 {
 	struct rbnode* p = subroot;
 	if(!subroot) goto error_ret;
@@ -279,141 +291,190 @@ error_ret:
 	return NULL;
 }
 
-// to be fixed.
-static void _fix_remove(struct rbtree* t, struct rbnode* x)
+static struct rbnode* _do_remove(struct rbtree* t, struct rbnode* x, struct rbnode** r)
 {
-	struct rbnode* w = NULL;
+	struct rbnode* w = x;
+
+	if(!t->root) goto error_ret;
 	if(!x) goto error_ret;
 
-	while(x != t->root && is_black(x))
+	if(!w->rchild)
 	{
-		if(x == x->parent->lchild)
-		{
-			w = x->parent->rchild;
-			if(is_red(w))
-			{
-				set_black(w);
-				set_red(x->parent);
-				_left_rotate(x->parent);
-			}
-			w = x->parent->rchild;
+		*r = w->lchild;
+	}
+	else if(!w->lchild)
+	{
+		*r = w->rchild;
+	}
+	else
+	{
+		w = _succ(x->rchild);
+		*r = w->rchild;
+	}
 
-			if(is_black(w->lchild) && is_black(w->rchild))
+	_swap_value(&x->key, &w->key);
+
+	_transplant(t, w, *r);
+
+	return w;
+error_ret:
+	return NULL;
+}
+
+static void _fix_bb(struct rbtree* tree, struct rbnode* x)
+{
+	struct rbnode* p = NULL;
+	struct rbnode* s = NULL;
+	struct rbnode* t = NULL;
+
+	if(is_red(x)) goto error_ret;
+
+	while(x)
+	{
+		p = x->parent;
+		if(!p)
+			break;
+
+		if(x == p->rchild)
+		{
+			s = p->lchild;
+			if(is_black(s))
 			{
-				set_red(w);
-				x = x->parent;
+				if(is_red(l_child(s)) || is_red(r_child(s)))
+				{
+					//bb1:
+					if(is_red(s->lchild)) t = l_child(s);
+					else if(is_red(s->rchild)) t = r_child(s);
+
+					_right_rotate(p);
+					p->isblack ? set_black(s) : set_red(s);
+					set_black(p);
+					set_black(t);
+					break;
+				}
+				else
+				{
+					if(is_red(p))
+					{
+						//bb2r:
+						set_black(p);
+						set_red(s);
+						break;
+					}
+					else
+					{
+						//bb2b:
+						set_red(s);
+						x = p;
+						continue;
+					}
+				}
 			}
-			else if(is_black(w->rchild))
+			else //bb3:
 			{
-				set_black(w->lchild);
-				set_red(w);
-				_right_rotate(w);
-				w = x->parent->rchild;
+				// p must be black;
+				_right_rotate(p);
+				set_black(s);
+				set_red(p);
+				// then turns in to bb1 / bb2r in the next loop;
 			}
-			
-			_cp_color(w, x->parent);
-			set_black(x->parent);
-			set_black(w->rchild);
-			_left_rotate(x->parent);
-			x = t->root;
 		}
 		else
 		{
-			w = x->parent->lchild;
-			if(is_red(w))
+			s = p->rchild;
+			if(is_black(s))
 			{
-				set_black(w);
-				set_red(x->parent);
-				_right_rotate(x->parent);
-			}
-			w = x->parent->lchild;
+				if(is_red(r_child(s)) || is_red(l_child(s)))
+				{
+					//bb1:
+					if(is_red(s->rchild)) t = r_child(s);
+					else if(is_red(s->lchild)) t = l_child(s);
 
-			if(is_black(w->rchild) && is_black(w->lchild))
-			{
-				set_red(w);
-				x = x->parent;
+					_left_rotate(p);
+					p->isblack ? set_black(s) : set_red(s);
+					set_black(p);
+					set_black(t);
+					break;
+				}
+				else
+				{
+					if(is_red(p))
+					{
+						//bb2r:
+						set_black(p);
+						set_red(s);
+						break;
+					}
+					else
+					{
+						//bb2b:
+						set_red(s);
+						x = p;
+						continue;
+					}
+				}
 			}
-			else if(is_black(w->lchild))
+			else //bb3:
 			{
-				set_black(w->rchild);
-				set_red(w);
-				_left_rotate(w);
-				w = x->parent->lchild;
+				// p must be black;
+				_left_rotate(p);
+				set_black(s);
+				set_red(p);
+				// then turns in to bb1 / bb2r in the next loop;
 			}
-			
-			_cp_color(w, x->parent);
-			set_black(x->parent);
-			set_black(w->lchild);
-			_right_rotate(x->parent);
-			x = t->root;
 		}
 	}
 
-	set_black(x);
+	while(x)
+	{
+		if(!x->parent)
+			break;
+
+		x = x->parent;
+
+		tree->root = x;
+	}
+
+	set_black(tree->root);
+
 error_ret:
 	return;
 }
 
 struct rbnode* rb_remove(struct rbtree* t, int key)
 {
-	struct rbnode* x = NULL;
-	struct rbnode* z = t->root;
-	struct rbnode* y = NULL;
-	int node_is_black = 0;
+	struct rbnode* r = NULL;
+	struct rbnode* x = t->root;
+	struct rbnode* tmp = NULL;
+	int isredr = 0;
+	int isredx = 0;
 
 	if(!t->root) goto error_ret;
 	if(t->size <= 0) return NULL;
 
-	z = rb_search(t, key, &x);
-	if(!z) goto error_ret;
+	x = rb_search(t, key, &r);
+	if(!x) goto error_ret;
 
-	y = z;
-	node_is_black = is_black(y);
+	isredx = is_red(x);
+	x = _do_remove(t, x, &r);
+	isredr = is_red(r);
 
-	if(!z->lchild)
-	{
-		x = z->rchild;
-		_transplant(t, z, x);
-	}
-	else if(!z->rchild)
-	{
-		x = z->lchild;
-		_transplant(t, z, x);
-	}
+	if(isredx || isredr)
+		set_black(r);
+	else
+		_fix_bb(t, r);
 
-	if(z->lchild && z->rchild)
-	{
-		y = _minnode(z->rchild);
-		node_is_black = is_black(y);
+	set_black(t->root);
 
-		x = y->rchild;
-		
-		_transplant(t, y, x);
-		_transplant(t, z, y);
-		_cp_color(y, z);
-	}
-
-	if(node_is_black)
-		_fix_remove(t, x);
-
-//	if(z->parent)
-//	{
-//		if(z == z->parent->lchild)
-//			z->parent->lchild = NULL;
-//		else if(z == z->parent->rchild)
-//			z->parent->rchild = NULL;
-//	}
-
-	z->parent = NULL;
-	z->lchild = NULL;
-	z->rchild = NULL;
+	x->parent = NULL;
+	x->lchild = NULL;
+	x->rchild = NULL;
 	
 	--t->size;
-
 	if(t->size <= 0)
 		t->root = NULL;
 
-	return z;
+	return x;
 error_ret:
 	return NULL;
 }
@@ -423,10 +484,9 @@ void pre_order(struct rbnode* node, order_function f)
 	if(!node || !f)
 		return;
 
-//	printf("%d(%d),", node->key, node->isblack);
+	f(node);
 	pre_order(node->lchild, f);
 	pre_order(node->rchild, f);
-	f(node);
 }
 
 void in_order(struct rbnode* node, order_function f)
@@ -435,7 +495,6 @@ void in_order(struct rbnode* node, order_function f)
 		return;
 
 	in_order(node->lchild, f);
-//	printf("%d(%d),", node->key, node->isblack);
 	f(node);
 	in_order(node->rchild, f);
 }
@@ -448,5 +507,4 @@ void post_order(struct rbnode* node, order_function f)
 	post_order(node->lchild, f);
 	post_order(node->rchild, f);
 	f(node);
-//	printf("%d(%d),", node->key, node->isblack);
 }

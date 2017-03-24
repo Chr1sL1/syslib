@@ -40,7 +40,12 @@ void test_link(void)
 void print_node(struct rbnode* node)
 {
 	if(node)
-		printf("(%d):%d,", node->key, node->isblack);
+	{
+		struct rbnode* lc = node->lchild;
+		struct rbnode* rc = node->rchild;
+
+		printf("%d(%d)[%d,%d] ", node->key, node->isblack, lc ? lc->key:0, rc ? rc->key:0);
+	}
 
 }
 
@@ -69,8 +74,7 @@ int main(void)
 //	shmem_destroy(__ptr);
 
 //	int test_arr[] = { 3,2,5,4,6,8,7,9,1,0,11,12,13,14,15,16,17,18,19,10 };
-//	int test_arr[] = { 1,2,3,4,5,6,7,8,9,10 };
-	int test_arr[] = { 10,9,8,7,6,5,4,3,2,1 };
+	int test_arr[] = { 1,2,3,4,5,6,7,8,9,10 };
 
 	struct rbtree test_tree;
 	test_tree.size = 0;
@@ -91,6 +95,7 @@ int main(void)
 		printf("\n---size %d---\n", test_tree.size);
 	}
 
+	printf("rooooooooooooooooooot:%d\n", test_tree.root->key);
 
 	for(int i = 0; i < sizeof(test_arr) / sizeof(int); i++)
 	{
