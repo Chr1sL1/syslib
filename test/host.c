@@ -4,38 +4,32 @@
 
 #include "shmem.h"
 #include "rbtree.h"
+#include "simple_list.h"
 
 const char* share_memory_name = "test_shm_17x";
-
-struct list_head
-{
-	struct list_head* prev;
-	struct list_head* post;
-};
 
 struct ad_test
 {
 	int _value1;
 	int _value2;
-	struct list_head _head;
 };
 
-void test_link(void)
-{
-	struct ad_test __test;
-	printf("_head addr: %p\n", &__test._head);
-
-	__test._value1 = 746;
-	__test._value2 = 626;
-
-	struct ad_test* p = (struct ad_test*)((void*)&__test._head - (void*)&((struct ad_test*)0)->_head);
-
-	printf("off head addr: %p\n", &((struct ad_test*)0)->_head);
-	printf("actual addr: %p\n", &__test);
-	printf("p addr: %p\n", p);
-	printf("%d,%d\n", p->_value1, p->_value2);
-
-}
+//void test_link(void)
+//{
+//	struct ad_test __test;
+//	printf("_head addr: %p\n", &__test._head);
+//
+//	__test._value1 = 746;
+//	__test._value2 = 626;
+//
+//	struct ad_test* p = (struct ad_test*)((void*)&__test._head - (void*)&((struct ad_test*)0)->_head);
+//
+//	printf("off head addr: %p\n", &((struct ad_test*)0)->_head);
+//	printf("actual addr: %p\n", &__test);
+//	printf("p addr: %p\n", p);
+//	printf("%d,%d\n", p->_value1, p->_value2);
+//
+//}
 
 void print_node(struct rbnode* node)
 {
@@ -48,6 +42,84 @@ void print_node(struct rbnode* node)
 	}
 
 }
+
+void test_rbtree(void)
+{
+//	int test_arr[] = { 3,2,5,4,6,8,7,9,1,0,11,12,13,14,15,16,17,18,19,10 };
+	int test_arr[] = { 10,9,8,7,6,5,4,3,2,1 };
+	int test_arr_rand[] = { 3,5,4,2,7,9,6,10,1,8 };
+
+	int test_arr_count= sizeof(test_arr) / sizeof(int);
+
+	struct rbtree test_tree;
+	test_tree.size = 0;
+	test_tree.root = NULL;
+
+	for(int i = 0; i < sizeof(test_arr) / sizeof(int); i++)
+	{
+		struct rbnode* node = (struct rbnode*)malloc(sizeof(struct rbnode));
+		rb_fillnew(&test_tree, node);
+
+		node->key = test_arr[i];
+
+		rb_insert(&test_tree, node);
+
+		pre_order(test_tree.root, print_node);
+		printf("\n");
+		in_order(test_tree.root, print_node);
+		printf("\n---size %d---\n", test_tree.size);
+	}
+
+	printf("rooooooooooooooooooot:%d\n", test_tree.root->key);
+
+	for(int i = 0; i < test_arr_count; i++)
+	{
+		struct rbnode* node = rb_remove(&test_tree, test_arr_rand[i]);
+
+		if(node)
+		{
+			pre_order(test_tree.root, print_node);
+			printf("\n");
+			in_order(test_tree.root, print_node);
+			printf("\n---size %d---\n", test_tree.size);
+
+			free(node);
+			node = NULL;
+		}
+	}
+}
+
+void test_lst(void)
+{
+	struct kt
+	{
+		int value;
+		struct lst_node nd;
+	};
+
+	struct simple_list lst;
+	struct kt* k = NULL;
+	lst_new(&lst);
+
+	for(int i = 0; i < 10; ++i)
+	{
+		k = malloc(sizeof(struct kt));
+		lst_clr(&k->nd);
+		k->value = i;
+
+		lst_insert_after(&lst, &lst.head, &k->nd);
+	}
+
+	struct lst_node* it = lst.head.next;
+	while(it != &lst.tail)
+	{
+		struct kt* k = (struct kt*)((void*)it - (void*)(&((struct kt*)0)->nd));
+		printf("%d,", k->value);
+
+		it = it->next;
+	}
+}
+
 
 int main(void)
 {
@@ -72,48 +144,8 @@ int main(void)
 //
 //	shmem_close(__read_ptr);
 //	shmem_destroy(__ptr);
-
-//	int test_arr[] = { 3,2,5,4,6,8,7,9,1,0,11,12,13,14,15,16,17,18,19,10 };
-	int test_arr[] = { 1,2,3,4,5,6,7,8,9,10 };
-
-	struct rbtree test_tree;
-	test_tree.size = 0;
-	test_tree.root = NULL;
-
-	for(int i = 0; i < sizeof(test_arr) / sizeof(int); i++)
-	{
-		struct rbnode* node = (struct rbnode*)malloc(sizeof(struct rbnode));
-		rb_fillnew(&test_tree, node);
-
-		node->key = test_arr[i];
-
-		rb_insert(&test_tree, node);
-
-		pre_order(test_tree.root, print_node);
-		printf("\n");
-		in_order(test_tree.root, print_node);
-		printf("\n---size %d---\n", test_tree.size);
-	}
-
-	printf("rooooooooooooooooooot:%d\n", test_tree.root->key);
-
-	for(int i = 0; i < sizeof(test_arr) / sizeof(int); i++)
-	{
-		struct rbnode* node = rb_remove(&test_tree, test_arr[i]);
-
-		if(node)
-		{
-			pre_order(test_tree.root, print_node);
-			printf("\n");
-			in_order(test_tree.root, print_node);
-			printf("\n---size %d---\n", test_tree.size);
-
-			free(node);
-			node = NULL;
-		}
-	}
-
-
-
+//
+	test_lst();
+	printf("\n");
 	return 0;
 }
