@@ -2,6 +2,7 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <ucontext.h>
+#include <sys/time.h>
 
 #include "shmem.h"
 #include "rbtree.h"
@@ -86,19 +87,20 @@ void test_rbtree(void)
 //	int test_arr[] = { 10,9,8,7,6,5,4,3,2,1 };
 //	int test_arr_rand[] = { 3,5,4,2,7,9,6,10,1,8 };
 
-
-	int test_arr[100];
+	int test_arr[1000000];
 	int test_arr_count= sizeof(test_arr) / sizeof(int);
+	struct timeval tv_begin, tv_end;
 
 	for(int i = 0; i < test_arr_count; i++) 
 		test_arr[i] = i;
-
 
 	random_shuffle(test_arr, test_arr_count);
 
 	struct rbtree test_tree;
 	test_tree.size = 0;
 	test_tree.root = NULL;
+
+	gettimeofday(&tv_begin, NULL);
 
 	for(int i = 0; i < test_arr_count; i++)
 	{
@@ -109,15 +111,19 @@ void test_rbtree(void)
 
 		rb_insert(&test_tree, node);
 
-		pre_order(test_tree.root, print_node);
-		printf("\n");
-		in_order(test_tree.root, print_node);
-		printf("\n---size %d---\n", test_tree.size);
+//		pre_order(test_tree.root, print_node);
+//		printf("\n");
+//		in_order(test_tree.root, print_node);
+//		printf("\n---size %d---\n", test_tree.size);
 	}
 
+	gettimeofday(&tv_end, NULL);
+	printf("insert elapse: %ld.\n", (long)tv_end.tv_usec - (long)tv_begin.tv_usec);
 	printf("rooooooooooooooooooot:%d\n", test_tree.root->key);
 
 	random_shuffle(test_arr, test_arr_count);
+
+	gettimeofday(&tv_begin, NULL);
 
 	for(int i = 0; i < test_arr_count; i++)
 	{
@@ -125,15 +131,18 @@ void test_rbtree(void)
 
 		if(node)
 		{
-			pre_order(test_tree.root, print_node);
-			printf("\n");
-			in_order(test_tree.root, print_node);
-			printf("\n---size %d---\n", test_tree.size);
+//			pre_order(test_tree.root, print_node);
+//			printf("\n");
+//			in_order(test_tree.root, print_node);
+//			printf("\n---size %d---\n", test_tree.size);
 
 			free(node);
 			node = NULL;
 		}
 	}
+
+	gettimeofday(&tv_end, NULL);
+	printf("delete elapse: %ld.\n", (int)tv_end.tv_usec - (int)tv_begin.tv_usec);
 }
 
 void test_lst(void)

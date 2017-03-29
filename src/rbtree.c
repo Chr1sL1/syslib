@@ -33,7 +33,7 @@ void rb_fillnew(struct rbnode* node)
 	}
 }
 
-void _left_rotate(struct rbnode* node)
+static void _left_rotate(struct rbnode* node)
 {
 	struct rbnode* rc = NULL;
 	if(node == NULL) goto error_ret;
@@ -64,7 +64,7 @@ error_ret:
 	return;
 }
 
-void _right_rotate(struct rbnode* node)
+static void _right_rotate(struct rbnode* node)
 {
 	struct rbnode* lc = NULL;
 	if(node == NULL) goto error_ret;
