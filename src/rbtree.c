@@ -21,7 +21,7 @@ static void _swap_value(int* v1, int* v2)
 	*v2 = tmp;
 }
 
-void rb_fillnew(struct rbtree* t, struct rbnode* node)
+void rb_fillnew(struct rbnode* node)
 {
 	if(node)
 	{
@@ -216,18 +216,22 @@ error_ret:
 struct rbnode* rb_search(struct rbtree* t, int key, struct rbnode** hot)
 {
 	struct rbnode* p = t->root;
-	*hot = t->root;
+	struct rbnode* h = NULL;
+
+	h = t->root;
 
 	if(!t->root) goto error_ret;
 
 	while(p && p->key != key)
 	{
-		*hot = p;
+		h = p;
 		if(key < p->key)
 			p = p->lchild;
 		else if(key > p->key)
 			p = p->rchild;
 	}
+
+	if(hot) *hot = h;
 
 	return p;
 error_ret:

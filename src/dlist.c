@@ -1,7 +1,7 @@
 #include <stdio.h>
-#include "simple_list.h"
+#include "dlist.h"
 
-int lst_new(struct simple_list* lst)
+int lst_new(struct dlist* lst)
 {
 	if(!lst) goto error_ret; 
 
@@ -13,25 +13,25 @@ int lst_new(struct simple_list* lst)
 
 	lst->size = 0;
 
-	return 0;
+	return 1;
 error_ret:
-	return -1;
+	return 0;
 }
 
-int lst_clr(struct lst_node* node)
+int lst_clr(struct dlnode* node)
 {
 	if(!node) goto error_ret;
 
 	node->prev = NULL;
 	node->next = NULL;
 
-	return 0;
+	return 1;
 error_ret:
-	return -1;
+	return 0;
 }
 
 
-int lst_insert_before(struct simple_list* lst, struct lst_node* suc, struct lst_node* node)
+int lst_insert_before(struct dlist* lst, struct dlnode* suc, struct dlnode* node)
 {
 	if(!lst || !suc || !node) goto error_ret;
 	if(suc == &lst->head) goto error_ret;
@@ -44,12 +44,12 @@ int lst_insert_before(struct simple_list* lst, struct lst_node* suc, struct lst_
 
 	++lst->size;
 
-	return 0;
+	return 1;
 error_ret:
-	return -1;
+	return 0;
 }
 
-int lst_insert_after(struct simple_list* lst, struct lst_node* prv, struct lst_node* node)
+int lst_insert_after(struct dlist* lst, struct dlnode* prv, struct dlnode* node)
 {
 	if(!lst || !prv || !node) goto error_ret;
 	if(prv == &lst->tail) goto error_ret;
@@ -62,12 +62,12 @@ int lst_insert_after(struct simple_list* lst, struct lst_node* prv, struct lst_n
 
 	++lst->size;
 
-	return 0;
+	return 1;
 error_ret:
-	return -1;
+	return 0;
 }
 
-int lst_remove(struct simple_list* lst, struct lst_node* node)
+int lst_remove(struct dlist* lst, struct dlnode* node)
 {
 	if(!lst || !node) goto error_ret;
 	if(node == &lst->head || node == &lst->tail) goto error_ret;
@@ -80,8 +80,8 @@ int lst_remove(struct simple_list* lst, struct lst_node* node)
 	
 	--lst->size;
 
-	return 0;
+	return 1;
 error_ret:
-	return -1;
+	return 0;
 }
 

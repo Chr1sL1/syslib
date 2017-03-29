@@ -1,12 +1,22 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <stdlib.h>
+#include <ucontext.h>
 
 #include "shmem.h"
 #include "rbtree.h"
-#include "simple_list.h"
+#include "dlist.h"
+#include "graph.h"
 
 const char* share_memory_name = "test_shm_17x";
+
+struct ucontext ctx1;
+struct ucontext ctx2;
+struct ucontext ctx_default;
+
+char stk1[16384];
+char stk2[16384];
+char stk_default[16384];
 
 struct ad_test
 {
@@ -30,6 +40,33 @@ struct ad_test
 //	printf("%d,%d\n", p->_value1, p->_value2);
 //
 //}
+//
+//
+void swap(int* a, int* b)
+{
+	int tmp = *a;
+	*a = *b;
+	*b = tmp;
+}
+
+void print_array(int* a, int n)
+{
+	for(int i = 0; i < n; ++i)
+	{
+		printf("%d,", a[i]);
+	}
+	printf("\n");
+}
+
+void random_shuffle(int* a, int n)
+{
+	for(int i = 0; i < n; ++i)
+	{
+		int rd = random() % n;
+		swap(&a[i], &a[rd]);
+	}
+}
+
 
 void print_node(struct rbnode* node)
 {
@@ -46,19 +83,27 @@ void print_node(struct rbnode* node)
 void test_rbtree(void)
 {
 //	int test_arr[] = { 3,2,5,4,6,8,7,9,1,0,11,12,13,14,15,16,17,18,19,10 };
-	int test_arr[] = { 10,9,8,7,6,5,4,3,2,1 };
-	int test_arr_rand[] = { 3,5,4,2,7,9,6,10,1,8 };
+//	int test_arr[] = { 10,9,8,7,6,5,4,3,2,1 };
+//	int test_arr_rand[] = { 3,5,4,2,7,9,6,10,1,8 };
 
+
+	int test_arr[100];
 	int test_arr_count= sizeof(test_arr) / sizeof(int);
+
+	for(int i = 0; i < test_arr_count; i++) 
+		test_arr[i] = i;
+
+
+	random_shuffle(test_arr, test_arr_count);
 
 	struct rbtree test_tree;
 	test_tree.size = 0;
 	test_tree.root = NULL;
 
-	for(int i = 0; i < sizeof(test_arr) / sizeof(int); i++)
+	for(int i = 0; i < test_arr_count; i++)
 	{
 		struct rbnode* node = (struct rbnode*)malloc(sizeof(struct rbnode));
-		rb_fillnew(&test_tree, node);
+		rb_fillnew(node);
 
 		node->key = test_arr[i];
 
@@ -72,9 +117,11 @@ void test_rbtree(void)
 
 	printf("rooooooooooooooooooot:%d\n", test_tree.root->key);
 
+	random_shuffle(test_arr, test_arr_count);
+
 	for(int i = 0; i < test_arr_count; i++)
 	{
-		struct rbnode* node = rb_remove(&test_tree, test_arr_rand[i]);
+		struct rbnode* node = rb_remove(&test_tree, test_arr[i]);
 
 		if(node)
 		{
@@ -94,10 +141,10 @@ void test_lst(void)
 	struct kt
 	{
 		int value;
-		struct lst_node nd;
+		struct dlnode nd;
 	};
 
-	struct simple_list lst;
+	struct dlist lst;
 	struct kt* k = NULL;
 	lst_new(&lst);
 
@@ -110,7 +157,7 @@ void test_lst(void)
 		lst_insert_after(&lst, &lst.head, &k->nd);
 	}
 
-	struct lst_node* it = lst.head.next;
+	struct dlnode * it = lst.head.next;
 	while(it != &lst.tail)
 	{
 		struct kt* k = (struct kt*)((void*)it - (void*)(&((struct kt*)0)->nd));
@@ -120,6 +167,96 @@ void test_lst(void)
 	}
 }
 
+void func1(char* param)
+{
+	printf("func1 executed.%s\n", param);
+	if(swapcontext(&ctx1, &ctx2) < 0)
+		goto error_ret;
+
+	printf("func1 return.\n");
+	return;
+error_ret:
+	printf("func1 error.\n");
+	return;
+}
+
+void func2(void)
+{
+	printf("func2 executed.\n");
+
+	if(swapcontext(&ctx2, &ctx1) < 0)
+		goto error_ret;
+
+	printf("func2 return.\n");
+	return;
+error_ret:
+	printf("func2 error.\n");
+}
+
+void func_default(void)
+{
+	while(1)
+	{
+		printf("waiting...\n");
+		sleep(1);
+	}
+}
+
+
+void test_ctx(void)
+{
+	if(getcontext(&ctx1) < 0)
+		goto error_ret;
+
+	ctx1.uc_stack.ss_sp = stk1;
+	ctx1.uc_stack.ss_size = sizeof(stk1);
+	ctx1.uc_link = &ctx2;
+	makecontext(&ctx1, func1, 1, (int)(share_memory_name)); 
+
+	if(getcontext(&ctx2) < 0)
+		goto error_ret;
+
+	ctx2.uc_stack.ss_sp = stk2;
+	ctx2.uc_stack.ss_size = sizeof(stk2);
+	ctx2.uc_link = &ctx_default;
+	makecontext(&ctx2, func2, 0);
+
+	if(getcontext(&ctx_default) < 0)
+		goto error_ret;
+
+	ctx_default.uc_stack.ss_sp = stk_default;
+	ctx_default.uc_stack.ss_size = sizeof(stk_default);
+	ctx_default.uc_link = NULL;
+	makecontext(&ctx_default, func_default, 0);
+
+	printf("test_stk started.\n");
+
+//	if(swapcontext(&ctx_default, &ctx1) < 0)
+	if(setcontext(&ctx1) < 0)
+		goto error_ret;
+	printf("test_stk finished.\n");
+
+	return;
+error_ret:
+	perror("fk..\n");
+	return;
+}
+
+void insertion_sort(int* a, int count)
+{
+	for(int i = 0; i < count; i++)
+	{
+		for(int j = i + 1; j < count; j++)
+		{
+			if(a[j] < a[i])
+			{
+				int tmp = a[j];
+				a[j] = a[i];
+				a[i] = tmp;
+			}
+		}
+	}
+}
 
 int main(void)
 {
@@ -145,7 +282,12 @@ int main(void)
 //	shmem_close(__read_ptr);
 //	shmem_destroy(__ptr);
 //
-	test_lst();
-	printf("\n");
+//	test_lst();
+//	dd
+//
+//	test_ctx();
+//
+
+	test_rbtree(); 
 	return 0;
 }
