@@ -10,6 +10,7 @@ struct rbtree;
 struct ngb_node
 {
 	int key;
+	int weight;
 	struct dlnode ngb_node;
 };
 

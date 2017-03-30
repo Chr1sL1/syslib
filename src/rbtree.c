@@ -7,6 +7,7 @@
 #define set_red(node)	((node) ? (node)->isblack = 0 : 0)
 #define l_child(node)	((node) ? (node)->lchild : NULL)
 #define r_child(node)	((node) ? (node)->rchild : NULL)
+#define get_parent(node) ((struct rbnode*)(node->parent))
 
 static void _cp_color(struct rbnode* to, struct rbnode* from)
 {
@@ -29,7 +30,7 @@ void rb_fillnew(struct rbnode* node)
 		node->isblack = 0;
 		node->lchild = NULL;
 		node->rchild = NULL;
-		node->parent = NULL;
+		node->parent = 0;
 	}
 }
 
@@ -45,16 +46,16 @@ static void _left_rotate(struct rbnode* node)
 
 	if(node->parent)
 	{
-		if(node == node->parent->lchild)
-			node->parent->lchild = rc;
+		if(node == get_parent(node)->lchild)
+			get_parent(node)->lchild = rc;
 		else
-			node->parent->rchild = rc;
+			get_parent(node)->rchild = rc;
 	}
 
-	node->parent = rc;
+	node->parent = (unsigned long)rc;
 
 	if(rc->lchild)
-		rc->lchild->parent = node;
+		rc->lchild->parent = (unsigned long)node;
 
 	node->rchild = rc->lchild;
 
@@ -76,16 +77,16 @@ static void _right_rotate(struct rbnode* node)
 
 	if(node->parent)
 	{
-		if(node == node->parent->lchild)
-			node->parent->lchild = lc;
+		if(node == get_parent(node)->lchild)
+			get_parent(node)->lchild = lc;
 		else
-			node->parent->rchild = lc;
+			get_parent(node)->rchild = lc;
 	}
 
-	node->parent = lc;
+	node->parent = (unsigned long)lc;
 
 	if(lc->rchild)
-		lc->rchild->parent = node;
+		lc->rchild->parent = (unsigned long)node;
 
 	node->lchild = lc->rchild;
 
@@ -105,10 +106,10 @@ static void _fix_rr(struct rbtree* t, struct rbnode* node)
 	p = node->parent;
 	if(!p) goto error_ret;
 
-	while(is_red(node->parent))
+	while(is_red(get_parent(node)))
 	{
-		p = node->parent;
-		g = p->parent;
+		p = get_parent(node);
+		g = get_parent(p);
 
 		if(p == g->lchild)
 		{
@@ -124,14 +125,14 @@ static void _fix_rr(struct rbtree* t, struct rbnode* node)
 			{
 				if(node == p->rchild)		// zigzag
 				{
-					_left_rotate(node->parent);
+					_left_rotate(get_parent(node));
 				}
 				else
-					node = node->parent;
+					node = get_parent(node);
 
 				set_black(node);
-				set_red(node->parent);
-				_right_rotate(node->parent);
+				set_red(get_parent(node));
+				_right_rotate(get_parent(node));
 
 				break;
 			}
@@ -150,14 +151,14 @@ static void _fix_rr(struct rbtree* t, struct rbnode* node)
 			{
 				if(node == p->lchild)		// zigzag
 				{
-					_right_rotate(node->parent);
+					_right_rotate(get_parent(node));
 				}
 				else
-					node = node->parent;
+					node = get_parent(node);
 
 				set_black(node);
-				set_red(node->parent);
-				_left_rotate(node->parent);
+				set_red(get_parent(node));
+				_left_rotate(get_parent(node));
 
 				break;
 			}
@@ -170,7 +171,7 @@ static void _fix_rr(struct rbtree* t, struct rbnode* node)
 		if(!node->parent)
 			break;
 
-		node = node->parent;
+		node = get_parent(node);
 	}
 	t->root = node;
 	set_black(t->root);
@@ -189,7 +190,7 @@ int rb_insert(struct rbtree* t, struct rbnode* node)
 	node->isblack = 0;
 	node->lchild = NULL;
 	node->rchild = NULL;
-	node->parent = hot;
+	node->parent = (unsigned long)hot;
 
 	if(hot != NULL)
 	{
@@ -198,7 +199,7 @@ int rb_insert(struct rbtree* t, struct rbnode* node)
 		else
 			hot->rchild = node;
 
-		node->parent = hot;
+		node->parent = (unsigned long)hot;
 
 		_fix_rr(t, node);
 	}
@@ -246,8 +247,8 @@ static void _link(struct rbnode* p, struct rbnode* lc, struct rbnode* rc)
 	p->lchild = lc;
 	p->rchild = rc;
 
-	lc ? (lc->parent = p) : 0;
-	rc ? (rc->parent = p) : 0;
+	lc ? (lc->parent = (unsigned long)p) : 0;
+	rc ? (rc->parent = (unsigned long)p) : 0;
 
 error_ret:
 	return;
@@ -262,15 +263,15 @@ static void _transplant(struct rbtree* t, struct rbnode* rm, struct rbnode* sc)
 	{
 		_link(sc, rm->lchild, rm->rchild);
 		t->root = sc;
-		if(sc) sc->parent = NULL;
+		if(sc) sc->parent = 0;
 	}
-	else if(rm == rm->parent->lchild)
-		_link(rm->parent, sc, rm->parent->rchild);
-	else if(rm == rm->parent->rchild)
-		_link(rm->parent, rm->parent->lchild, sc);
+	else if(rm == get_parent(rm)->lchild)
+		_link(get_parent(rm), sc, get_parent(rm)->rchild);
+	else if(rm == get_parent(rm)->rchild)
+		_link(get_parent(rm), get_parent(rm)->lchild, sc);
 
 
-	rm->parent = NULL;
+	rm->parent = 0;
 	rm->lchild = NULL;
 	rm->rchild = NULL;
 
@@ -335,7 +336,7 @@ static void _fix_bb(struct rbtree* tree, struct rbnode* x)
 
 	while(x)
 	{
-		p = x->parent;
+		p = get_parent(x);
 		if(!p)
 			break;
 
@@ -434,7 +435,7 @@ static void _fix_bb(struct rbtree* tree, struct rbnode* x)
 		if(!x->parent)
 			break;
 
-		x = x->parent;
+		x = get_parent(x);
 
 		tree->root = x;
 	}
@@ -470,7 +471,7 @@ struct rbnode* rb_remove(struct rbtree* t, int key)
 
 	set_black(t->root);
 
-	x->parent = NULL;
+	x->parent = 0;
 	x->lchild = NULL;
 	x->rchild = NULL;
 	

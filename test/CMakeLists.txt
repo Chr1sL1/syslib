@@ -5,7 +5,7 @@ aux_source_directory(../src SRC_DIR)
 aux_source_directory(. SRC_DIR)
 
 set(CMAKE_EXPORT_COMPILE_COMMAND ON)
-add_compile_options(-O2)
+add_compile_options(-g)
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -finline-functions")
 
 add_executable(test ${SRC_DIR})

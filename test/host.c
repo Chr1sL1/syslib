@@ -25,6 +25,44 @@ struct ad_test
 	int _value2;
 };
 
+#pragma comment(push,1)
+struct ut
+{
+	union
+	{
+		int* ptr;
+		struct 
+		{
+			unsigned long ptr63 : 63;
+			unsigned char clr : 1;
+		};
+	};
+};
+
+struct utt
+{
+	union
+	{
+		unsigned long v;
+		struct
+		{
+			unsigned char a;
+			unsigned char b;
+			unsigned char c;
+			unsigned char d;
+			unsigned char e;
+			unsigned char f;
+			unsigned char g;
+			unsigned char h;
+		};
+
+	};
+};
+
+#pragma comment(pop)
+
+
+
 //void test_link(void)
 //{
 //	struct ad_test __test;
@@ -83,11 +121,11 @@ void print_node(struct rbnode* node)
 
 void test_rbtree(void)
 {
-//	int test_arr[] = { 3,2,5,4,6,8,7,9,1,0,11,12,13,14,15,16,17,18,19,10 };
-//	int test_arr[] = { 10,9,8,7,6,5,4,3,2,1 };
-//	int test_arr_rand[] = { 3,5,4,2,7,9,6,10,1,8 };
+	//	int test_arr[] = { 3,2,5,4,6,8,7,9,1,0,11,12,13,14,15,16,17,18,19,10 };
+	//	int test_arr[] = { 10,9,8,7,6,5,4,3,2,1 };
+	//	int test_arr_rand[] = { 3,5,4,2,7,9,6,10,1,8 };
 
-	int test_arr[1000000];
+	int test_arr[1000];
 	int test_arr_count= sizeof(test_arr) / sizeof(int);
 	struct timeval tv_begin, tv_end;
 
@@ -111,10 +149,10 @@ void test_rbtree(void)
 
 		rb_insert(&test_tree, node);
 
-//		pre_order(test_tree.root, print_node);
-//		printf("\n");
-//		in_order(test_tree.root, print_node);
-//		printf("\n---size %d---\n", test_tree.size);
+				pre_order(test_tree.root, print_node);
+				printf("\n");
+				in_order(test_tree.root, print_node);
+				printf("\n---size %d---\n", test_tree.size);
 	}
 
 	gettimeofday(&tv_end, NULL);
@@ -131,10 +169,10 @@ void test_rbtree(void)
 
 		if(node)
 		{
-//			pre_order(test_tree.root, print_node);
-//			printf("\n");
-//			in_order(test_tree.root, print_node);
-//			printf("\n---size %d---\n", test_tree.size);
+						pre_order(test_tree.root, print_node);
+						printf("\n");
+						in_order(test_tree.root, print_node);
+						printf("\n---size %d---\n", test_tree.size);
 
 			free(node);
 			node = NULL;
@@ -142,7 +180,7 @@ void test_rbtree(void)
 	}
 
 	gettimeofday(&tv_end, NULL);
-	printf("delete elapse: %ld.\n", (int)tv_end.tv_usec - (int)tv_begin.tv_usec);
+	printf("delete elapse: %ld.\n", (long)tv_end.tv_usec - (long)tv_begin.tv_usec);
 }
 
 void test_lst(void)
@@ -240,7 +278,7 @@ void test_ctx(void)
 
 	printf("test_stk started.\n");
 
-//	if(swapcontext(&ctx_default, &ctx1) < 0)
+	//	if(swapcontext(&ctx_default, &ctx1) < 0)
 	if(setcontext(&ctx1) < 0)
 		goto error_ret;
 	printf("test_stk finished.\n");
@@ -269,33 +307,61 @@ void insertion_sort(int* a, int count)
 
 int main(void)
 {
-//	test_link();
+	//	test_link();
+	//
+	//	struct shm_host_ptr* __ptr = shmem_new(share_memory_name, 1024 * 1024 * 1024);
+	//	struct shm_client_ptr* __read_ptr = NULL;
+	//
+	//	if(!__ptr)
+	//		return -1;
+	//
+	//	sprintf((char*)__ptr->_the_addr._addr, "hello world.");
+	//
+	//	__read_ptr = shmem_open(share_memory_name);
+	//
+	//	if(!__read_ptr)
+	//		return -1;
+	//
+	//	printf("content: %s\n", (char*)__read_ptr->_the_addr._addr);
+	//	printf("pid: %u, groupid: %u\n", getpid(), getpgrp());
+	//
+	//
+	//	shmem_close(__read_ptr);
+	//	shmem_destroy(__ptr);
+	//
+	//	test_lst();
+	//	dd
+	//
+	//	test_ctx();
+	//
+	//
+
+
+//	struct utt _utt;
+//	_utt.v = 0x0102030405060708;
 //
-//	struct shm_host_ptr* __ptr = shmem_new(share_memory_name, 1024 * 1024 * 1024);
-//	struct shm_client_ptr* __read_ptr = NULL;
-//
-//	if(!__ptr)
-//		return -1;
-//
-//	sprintf((char*)__ptr->_the_addr._addr, "hello world.");
-//
-//	__read_ptr = shmem_open(share_memory_name);
-//
-//	if(!__read_ptr)
-//		return -1;
-//
-//	printf("content: %s\n", (char*)__read_ptr->_the_addr._addr);
-//	printf("pid: %u, groupid: %u\n", getpid(), getpgrp());
+//	printf("%x\n", _utt.a);
+//	printf("%x\n", _utt.b);
+//	printf("%x\n", _utt.c);
+//	printf("%x\n", _utt.d);
+//	printf("%x\n", _utt.e);
+//	printf("%x\n", _utt.f);
+//	printf("%x\n", _utt.g);
+//	printf("%x\n", _utt.h);
 //
 //
-//	shmem_close(__read_ptr);
-//	shmem_destroy(__ptr);
 //
-//	test_lst();
-//	dd
+//	int a = 0x1234ABCD;
+//	struct ut u;
+//	u.ptr = &a;
+//	printf("%.16p\n", u.ptr);
+//	printf("%.16p\n", (int*)u.ptr63);
 //
-//	test_ctx();
+//	u.clr |= 0x8000000000000000;
+//	printf("%d\n", u.clr);
 //
+//	u.clr &= ~0x8000000000000000;
+//	printf("%x\n", *(int*)(u.ptr63));
 
 	test_rbtree(); 
 	return 0;
