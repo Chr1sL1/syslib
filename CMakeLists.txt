@@ -1,8 +1,8 @@
 project(test)
 
-include_directories(../inc)
-aux_source_directory(../src SRC_DIR)
-aux_source_directory(. SRC_DIR)
+include_directories(inc)
+aux_source_directory(src SRC_DIR)
+aux_source_directory(test SRC_DIR)
 
 set(CMAKE_EXPORT_COMPILE_COMMAND ON)
 add_compile_options(-g)
