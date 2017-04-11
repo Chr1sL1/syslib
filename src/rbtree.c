@@ -18,7 +18,7 @@ static void _cp_color(struct rbnode* to, struct rbnode* from)
 		to->isblack = from ? from->isblack : 1;
 }
 
-static void _swap_value(int* v1, int* v2)
+static void _swap_value(long* v1, long* v2)
 {
 	int tmp = *v1;
 	*v1 = *v2;

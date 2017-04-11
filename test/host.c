@@ -8,6 +8,7 @@
 #include "rbtree.h"
 #include "dlist.h"
 #include "graph.h"
+#include "common.h"
 
 const char* share_memory_name = "test_shm_17x";
 
@@ -18,6 +19,7 @@ struct ucontext ctx_default;
 char stk1[16384];
 char stk2[16384];
 char stk_default[16384];
+int test_arr[100];
 
 struct ad_test
 {
@@ -114,25 +116,20 @@ void print_node(struct rbnode* node)
 		struct rbnode* lc = node->lchild;
 		struct rbnode* rc = node->rchild;
 
-		printf("%d(%d)[%d,%d] ", node->key, node->isblack, lc ? lc->key:0, rc ? rc->key:0);
+//		printf("%d(%d)[%d,%d] ", node->key, node->isblack, lc ? lc->key:0, rc ? rc->key:0);
 	}
 
 }
 
 void test_rbtree(void)
 {
-	//	int test_arr[] = { 3,2,5,4,6,8,7,9,1,0,11,12,13,14,15,16,17,18,19,10 };
-	//	int test_arr[] = { 10,9,8,7,6,5,4,3,2,1 };
-	//	int test_arr_rand[] = { 3,5,4,2,7,9,6,10,1,8 };
-
-	int test_arr[1000];
 	int test_arr_count= sizeof(test_arr) / sizeof(int);
 	struct timeval tv_begin, tv_end;
 
 	for(int i = 0; i < test_arr_count; i++) 
 		test_arr[i] = i;
 
-	random_shuffle(test_arr, test_arr_count);
+//	random_shuffle(test_arr, test_arr_count);
 
 	struct rbtree test_tree;
 	test_tree.size = 0;
@@ -149,15 +146,19 @@ void test_rbtree(void)
 
 		rb_insert(&test_tree, node);
 
-				pre_order(test_tree.root, print_node);
-				printf("\n");
-				in_order(test_tree.root, print_node);
-				printf("\n---size %d---\n", test_tree.size);
+//		pre_order(test_tree.root, print_node);
+//		printf("\n");
+//		in_order(test_tree.root, print_node);
+		printf("\n---size %d---\n", test_tree.size);
 	}
 
 	gettimeofday(&tv_end, NULL);
 	printf("insert elapse: %ld.\n", (long)tv_end.tv_usec - (long)tv_begin.tv_usec);
-	printf("rooooooooooooooooooot:%d\n", test_tree.root->key);
+	printf("rooooooooooooooooooot:%ld\n", test_tree.root->key);
+
+	printf("traverse: \n");
+	rb_traverse(&test_tree, print_node);	
+	printf("\n");
 
 	random_shuffle(test_arr, test_arr_count);
 
@@ -169,10 +170,10 @@ void test_rbtree(void)
 
 		if(node)
 		{
-						pre_order(test_tree.root, print_node);
-						printf("\n");
-						in_order(test_tree.root, print_node);
-						printf("\n---size %d---\n", test_tree.size);
+//			pre_order(test_tree.root, print_node);
+//			printf("\n");
+//			in_order(test_tree.root, print_node);
+			printf("\n---size %d---\n", test_tree.size);
 
 			free(node);
 			node = NULL;
@@ -194,15 +195,24 @@ void test_lst(void)
 	struct dlist lst;
 	struct kt* k = NULL;
 	lst_new(&lst);
+	int test_arr_count= sizeof(test_arr) / sizeof(int);
 
-	for(int i = 0; i < 10; ++i)
+	for(int i = 0; i < test_arr_count; i++) 
+		test_arr[i] = i;
+
+	random_shuffle(test_arr, test_arr_count);
+
+	for(int i = 0; i < test_arr_count; ++i)
 	{
 		k = malloc(sizeof(struct kt));
 		lst_clr(&k->nd);
-		k->value = i;
+		k->value = test_arr[i];
+		lst_push_back(&lst, &k->nd);
 
-		lst_insert_after(&lst, &lst.head, &k->nd);
+		printf("%d,", k->value);
 	}
+
+	printf("\n");
 
 	struct dlnode * it = lst.head.next;
 	while(it != &lst.tail)
@@ -212,6 +222,16 @@ void test_lst(void)
 
 		it = it->next;
 	}
+
+	printf("\n");
+
+	for(int i = 0; i < test_arr_count; ++i)
+	{
+		struct dlnode* n = lst_pop_front(&lst);
+		struct kt* k = node_cast(kt, n, nd);
+		printf("%d,", k->value);
+	}
+	printf("\n");
 }
 
 void func1(char* param)
@@ -250,44 +270,44 @@ void func_default(void)
 }
 
 
-void test_ctx(void)
-{
-	if(getcontext(&ctx1) < 0)
-		goto error_ret;
-
-	ctx1.uc_stack.ss_sp = stk1;
-	ctx1.uc_stack.ss_size = sizeof(stk1);
-	ctx1.uc_link = &ctx2;
-	makecontext(&ctx1, func1, 1, (int)(share_memory_name)); 
-
-	if(getcontext(&ctx2) < 0)
-		goto error_ret;
-
-	ctx2.uc_stack.ss_sp = stk2;
-	ctx2.uc_stack.ss_size = sizeof(stk2);
-	ctx2.uc_link = &ctx_default;
-	makecontext(&ctx2, func2, 0);
-
-	if(getcontext(&ctx_default) < 0)
-		goto error_ret;
-
-	ctx_default.uc_stack.ss_sp = stk_default;
-	ctx_default.uc_stack.ss_size = sizeof(stk_default);
-	ctx_default.uc_link = NULL;
-	makecontext(&ctx_default, func_default, 0);
-
-	printf("test_stk started.\n");
-
-	//	if(swapcontext(&ctx_default, &ctx1) < 0)
-	if(setcontext(&ctx1) < 0)
-		goto error_ret;
-	printf("test_stk finished.\n");
-
-	return;
-error_ret:
-	perror("fk..\n");
-	return;
-}
+//void test_ctx(void)
+//{
+//	if(getcontext(&ctx1) < 0)
+//		goto error_ret;
+//
+//	ctx1.uc_stack.ss_sp = stk1;
+//	ctx1.uc_stack.ss_size = sizeof(stk1);
+//	ctx1.uc_link = &ctx2;
+//	makecontext(&ctx1, func1, 1, (int)(share_memory_name)); 
+//
+//	if(getcontext(&ctx2) < 0)
+//		goto error_ret;
+//
+//	ctx2.uc_stack.ss_sp = stk2;
+//	ctx2.uc_stack.ss_size = sizeof(stk2);
+//	ctx2.uc_link = &ctx_default;
+//	makecontext(&ctx2, func2, 0);
+//
+//	if(getcontext(&ctx_default) < 0)
+//		goto error_ret;
+//
+//	ctx_default.uc_stack.ss_sp = stk_default;
+//	ctx_default.uc_stack.ss_size = sizeof(stk_default);
+//	ctx_default.uc_link = NULL;
+//	makecontext(&ctx_default, func_default, 0);
+//
+//	printf("test_stk started.\n");
+//
+//	//	if(swapcontext(&ctx_default, &ctx1) < 0)
+//	if(setcontext(&ctx1) < 0)
+//		goto error_ret;
+//	printf("test_stk finished.\n");
+//
+//	return;
+//error_ret:
+//	perror("fk..\n");
+//	return;
+//}
 
 void insertion_sort(int* a, int count)
 {
@@ -337,32 +357,34 @@ int main(void)
 	//
 
 
-//	struct utt _utt;
-//	_utt.v = 0x0102030405060708;
-//
-//	printf("%x\n", _utt.a);
-//	printf("%x\n", _utt.b);
-//	printf("%x\n", _utt.c);
-//	printf("%x\n", _utt.d);
-//	printf("%x\n", _utt.e);
-//	printf("%x\n", _utt.f);
-//	printf("%x\n", _utt.g);
-//	printf("%x\n", _utt.h);
-//
-//
-//
-//	int a = 0x1234ABCD;
-//	struct ut u;
-//	u.ptr = &a;
-//	printf("%.16p\n", u.ptr);
-//	printf("%.16p\n", (int*)u.ptr63);
-//
-//	u.clr |= 0x8000000000000000;
-//	printf("%d\n", u.clr);
-//
-//	u.clr &= ~0x8000000000000000;
-//	printf("%x\n", *(int*)(u.ptr63));
+	//	struct utt _utt;
+	//	_utt.v = 0x0102030405060708;
+	//
+	//	printf("%x\n", _utt.a);
+	//	printf("%x\n", _utt.b);
+	//	printf("%x\n", _utt.c);
+	//	printf("%x\n", _utt.d);
+	//	printf("%x\n", _utt.e);
+	//	printf("%x\n", _utt.f);
+	//	printf("%x\n", _utt.g);
+	//	printf("%x\n", _utt.h);
+	//
+	//
+	//
+	//	int a = 0x1234ABCD;
+	//	struct ut u;
+	//	u.ptr = &a;
+	//	printf("%.16p\n", u.ptr);
+	//	printf("%.16p\n", (int*)u.ptr63);
+	//
+	//	u.clr |= 0x8000000000000000;
+	//	printf("%d\n", u.clr);
+	//
+	//	u.clr &= ~0x8000000000000000;
+	//	printf("%x\n", *(int*)(u.ptr63));
 
 	test_rbtree(); 
+//	test_lst();
+
 	return 0;
 }

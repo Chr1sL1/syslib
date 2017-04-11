@@ -1,26 +1,17 @@
 #ifndef __rbtree_h__
 #define __rbtree_h__
 
-
-#pragma comment(push, 1)
 struct rbnode
 {
-	int key;
+	long key;
 	struct rbnode* lchild;
 	struct rbnode* rchild;
 	union
 	{
 		struct rbnode* p;
 		unsigned isblack : 2;
-
-//		struct
-//		{
-//			unsigned long parent : 63;
-//			unsigned isblack : 1;
-//		};
 	};
 };
-#pragma comment(pop)
 
 struct rbtree
 {
