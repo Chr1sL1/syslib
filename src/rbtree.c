@@ -1,5 +1,7 @@
 #include <stdio.h>
 #include "rbtree.h"
+#include "dlist.h"
+#include "common.h"
 
 #define is_black(node)	(!(node) || (node)->isblack)
 #define is_red(node)	((node) && !(node)->isblack)
@@ -7,7 +9,8 @@
 #define set_red(node)	((node) ? (node)->isblack = 0 : 0)
 #define l_child(node)	((node) ? (node)->lchild : NULL)
 #define r_child(node)	((node) ? (node)->rchild : NULL)
-#define get_parent(node) ((struct rbnode*)(node->parent))
+
+#define MAX_TRAVERSE_QUEUE_LEN (1024)
 
 static void _cp_color(struct rbnode* to, struct rbnode* from)
 {
@@ -22,6 +25,20 @@ static void _swap_value(int* v1, int* v2)
 	*v2 = tmp;
 }
 
+static void _set_parent(struct rbnode* node, struct rbnode* p)
+{
+	long pval = (long)p;
+	pval |= node->isblack;
+	node->p = (struct rbnode*)pval;
+}
+
+static struct rbnode* _get_parent(struct rbnode* node)
+{
+	long pval = (long)node->p;
+	pval &= -4;
+	return (struct rbnode*)pval;
+}
+
 void rb_fillnew(struct rbnode* node)
 {
 	if(node)
@@ -30,32 +47,36 @@ void rb_fillnew(struct rbnode* node)
 		node->isblack = 0;
 		node->lchild = NULL;
 		node->rchild = NULL;
-		node->parent = 0;
+		_set_parent(node, NULL);
 	}
 }
 
 static void _left_rotate(struct rbnode* node)
 {
 	struct rbnode* rc = NULL;
+	struct rbnode* node_p = NULL;
+
 	if(node == NULL) goto error_ret;
 
 	rc = node->rchild;
 	if(rc == NULL) goto error_ret;
 
-	rc->parent = node->parent;
+	node_p = _get_parent(node);
 
-	if(node->parent)
+	_set_parent(rc, node_p);
+
+	if(node_p)
 	{
-		if(node == get_parent(node)->lchild)
-			get_parent(node)->lchild = rc;
+		if(node == node_p->lchild)
+			node_p->lchild = rc;
 		else
-			get_parent(node)->rchild = rc;
+			node_p->rchild = rc;
 	}
 
-	node->parent = (unsigned long)rc;
+	_set_parent(node, rc);
 
 	if(rc->lchild)
-		rc->lchild->parent = (unsigned long)node;
+		_set_parent(rc->lchild, node);
 
 	node->rchild = rc->lchild;
 
@@ -68,25 +89,29 @@ error_ret:
 static void _right_rotate(struct rbnode* node)
 {
 	struct rbnode* lc = NULL;
+	struct rbnode* node_p = NULL;
+
 	if(node == NULL) goto error_ret;
 
 	lc = node->lchild;
 	if(lc == NULL) goto error_ret;
 
-	lc->parent = node->parent;
+	node_p = _get_parent(node);
 
-	if(node->parent)
+	_set_parent(lc, node_p);
+
+	if(node_p)
 	{
-		if(node == get_parent(node)->lchild)
-			get_parent(node)->lchild = lc;
+		if(node == node_p->lchild)
+			node_p->lchild = lc;
 		else
-			get_parent(node)->rchild = lc;
+			node_p->rchild = lc;
 	}
 
-	node->parent = (unsigned long)lc;
+	_set_parent(node, lc);
 
 	if(lc->rchild)
-		lc->rchild->parent = (unsigned long)node;
+		_set_parent(lc->rchild, node);
 
 	node->lchild = lc->rchild;
 
@@ -103,13 +128,13 @@ static void _fix_rr(struct rbtree* t, struct rbnode* node)
 	struct rbnode* p = NULL, *g = NULL, *u = NULL;
 	if(!node) goto error_ret;
 
-	p = node->parent;
+	p = _get_parent(node);
 	if(!p) goto error_ret;
 
-	while(is_red(get_parent(node)))
+	while(is_red(p))
 	{
-		p = get_parent(node);
-		g = get_parent(p);
+		p = _get_parent(node);
+		g = _get_parent(p);
 
 		if(p == g->lchild)
 		{
@@ -125,14 +150,14 @@ static void _fix_rr(struct rbtree* t, struct rbnode* node)
 			{
 				if(node == p->rchild)		// zigzag
 				{
-					_left_rotate(get_parent(node));
+					_left_rotate(p);
 				}
 				else
-					node = get_parent(node);
+					node = p;
 
 				set_black(node);
-				set_red(get_parent(node));
-				_right_rotate(get_parent(node));
+				set_red(p);
+				_right_rotate(p);
 
 				break;
 			}
@@ -151,14 +176,14 @@ static void _fix_rr(struct rbtree* t, struct rbnode* node)
 			{
 				if(node == p->lchild)		// zigzag
 				{
-					_right_rotate(get_parent(node));
+					_right_rotate(p);
 				}
 				else
-					node = get_parent(node);
+					node = p;
 
 				set_black(node);
-				set_red(get_parent(node));
-				_left_rotate(get_parent(node));
+				set_red(p);
+				_left_rotate(p);
 
 				break;
 			}
@@ -168,10 +193,11 @@ static void _fix_rr(struct rbtree* t, struct rbnode* node)
 
 	while(node)
 	{
-		if(!node->parent)
+		p = _get_parent(node);
+		if(!p)
 			break;
 
-		node = get_parent(node);
+		node = p;
 	}
 	t->root = node;
 	set_black(t->root);
@@ -184,13 +210,13 @@ int rb_insert(struct rbtree* t, struct rbnode* node)
 {
 	struct rbnode* hot = NULL;
 
-	if(!node) goto error_ret;
+	if(!node || (unsigned long)node & 0x3 != 0) goto error_ret;
 	if(rb_search(t, node->key, &hot) != NULL) goto error_ret;
 
 	node->isblack = 0;
 	node->lchild = NULL;
 	node->rchild = NULL;
-	node->parent = (unsigned long)hot;
+	_set_parent(node, hot);
 
 	if(hot != NULL)
 	{
@@ -199,8 +225,7 @@ int rb_insert(struct rbtree* t, struct rbnode* node)
 		else
 			hot->rchild = node;
 
-		node->parent = (unsigned long)hot;
-
+		_set_parent(node, hot);
 		_fix_rr(t, node);
 	}
 	else
@@ -247,8 +272,8 @@ static void _link(struct rbnode* p, struct rbnode* lc, struct rbnode* rc)
 	p->lchild = lc;
 	p->rchild = rc;
 
-	lc ? (lc->parent = (unsigned long)p) : 0;
-	rc ? (rc->parent = (unsigned long)p) : 0;
+	lc ? _set_parent(lc, p) : 0;
+	rc ? _set_parent(rc, p) : 0;
 
 error_ret:
 	return;
@@ -256,22 +281,24 @@ error_ret:
 
 static void _transplant(struct rbtree* t, struct rbnode* rm, struct rbnode* sc)
 {
+	struct rbnode* rm_p = NULL;
 	if(!t->root) goto error_ret;
 	if(!rm) goto error_ret;
 
-	if(!rm->parent)	 // root
+	rm_p = _get_parent(rm);
+
+	if(!rm_p)	 // root
 	{
 		_link(sc, rm->lchild, rm->rchild);
 		t->root = sc;
-		if(sc) sc->parent = 0;
+		if(sc) _set_parent(sc, NULL);
 	}
-	else if(rm == get_parent(rm)->lchild)
-		_link(get_parent(rm), sc, get_parent(rm)->rchild);
-	else if(rm == get_parent(rm)->rchild)
-		_link(get_parent(rm), get_parent(rm)->lchild, sc);
+	else if(rm == rm_p->lchild)
+		_link(rm_p, sc, rm_p->rchild);
+	else if(rm == rm_p->rchild)
+		_link(rm_p, rm_p->lchild, sc);
 
-
-	rm->parent = 0;
+	_set_parent(rm, NULL);
 	rm->lchild = NULL;
 	rm->rchild = NULL;
 
@@ -336,7 +363,7 @@ static void _fix_bb(struct rbtree* tree, struct rbnode* x)
 
 	while(x)
 	{
-		p = get_parent(x);
+		p = _get_parent(x);
 		if(!p)
 			break;
 
@@ -432,10 +459,11 @@ static void _fix_bb(struct rbtree* tree, struct rbnode* x)
 
 	while(x)
 	{
-		if(!x->parent)
+		p = _get_parent(x);
+		if(!p)
 			break;
 
-		x = get_parent(x);
+		x = p;
 
 		tree->root = x;
 	}
@@ -471,7 +499,7 @@ struct rbnode* rb_remove(struct rbtree* t, int key)
 
 	set_black(t->root);
 
-	x->parent = 0;
+	_set_parent(x, NULL);
 	x->lchild = NULL;
 	x->rchild = NULL;
 	
@@ -482,6 +510,76 @@ struct rbnode* rb_remove(struct rbtree* t, int key)
 	return x;
 error_ret:
 	return NULL;
+}
+
+struct rbt_traverse_node
+{
+	struct dlnode lstnd;
+	struct rbnode* rbnd;
+};
+
+struct rbt_free_idx_node
+{
+	struct dlnode lstnd;
+	int i;
+};
+
+struct rbt_traverse_node __traverse_pool[MAX_TRAVERSE_QUEUE_LEN];
+
+static int prepare_traverse_node(struct dlist* t_list, struct rbt_traverse_node* nd, struct rbnode* p)
+{
+	lst_clr(&nd->lstnd);
+	nd->rbnd = p;
+
+	if(!lst_push_back(t_list, &nd->lstnd)) goto error_ret;
+
+	return 1;
+error_ret:
+	return 0;
+}
+
+void rb_traverse(struct rbtree* t, order_function f)
+{
+//	struct rbnode* p = t->root;
+//	struct dlist visit_list;
+//
+//	if(!p) goto error_ret;
+//	if(!lst_new(&visit_list)) goto error_ret;
+//
+//	struct rbt_traverse_node tnd;
+//	if(!prepare_traverse_node(&visit_list, &tnd, p)) goto error_ret;
+//
+//	while(1)
+//	{
+//		struct dlnode* dln = NULL;
+//		struct rbt_traverse_node* curnode = NULL;
+//
+//		if(visit_list.size <= 0) break;
+//
+//		dln = lst_pop_front(&visit_list);
+//		if(!dln) goto error_ret;
+//
+//		curnode = node_cast(rbt_traverse_node, dln, lstnd);
+//
+//		if(!curnode->rbnd) goto error_ret;
+//		(*f)(curnode->rbnd);
+//
+//		if(curnode->rbnd->lchild != NULL)
+//		{
+//			struct rbt_traverse_node tndl;
+//			if(!prepare_traverse_node(&visit_list, &tndl, curnode->rbnd->lchild)) goto error_ret;
+//		}
+//
+//		if(curnode->rbnd->rchild != NULL)
+//		{
+//			struct rbt_traverse_node tndr;
+//			if(!prepare_traverse_node(&visit_list, &tndr, curnode->rbnd->rchild)) goto error_ret;
+//		}
+//	}
+//
+//	return;
+//error_ret:
+//	return;
 }
 
 void pre_order(struct rbnode* node, order_function f)

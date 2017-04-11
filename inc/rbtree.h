@@ -11,11 +11,13 @@ struct rbnode
 	union
 	{
 		struct rbnode* p;
-		struct
-		{
-			unsigned long parent : 63;
-			unsigned isblack : 1;
-		};
+		unsigned isblack : 2;
+
+//		struct
+//		{
+//			unsigned long parent : 63;
+//			unsigned isblack : 1;
+//		};
 	};
 };
 #pragma comment(pop)
@@ -23,6 +25,7 @@ struct rbnode
 struct rbtree
 {
 	int size;
+	int depth;
 	struct rbnode* root;
 };
 
@@ -32,6 +35,8 @@ void rb_fillnew(struct rbnode* node);
 int rb_insert(struct rbtree* t, struct rbnode* node);
 struct rbnode* rb_search(struct rbtree* t, int key, struct rbnode** hot);
 struct rbnode* rb_remove(struct rbtree* t, int key);
+
+void rb_traverse(struct rbtree* t, order_function f);
 
 
 //debug issue
