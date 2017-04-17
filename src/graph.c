@@ -1,10 +1,8 @@
-#include "stdio.h"
+#include <stdio.h>
+#include "common.h"
 #include "dlist.h"
 #include "rbtree.h"
 #include "graph.h"
-
-#define node_cast(out_type, ptr, m_var)\
-	(struct out_type*)((void*)ptr - (size_t)&(((struct out_type*)0)->m_var))
 
 int graph_new(struct graph* g)
 {
@@ -26,6 +24,7 @@ int graph_add_node(struct graph* g, struct gnode* node, int key)
 	lst_new(&node->ngb_list);
 
 	node->table_node.key = key;
+	node->visited = 0;
 
 	if(!rb_insert(&g->gnode_table, &node->table_node))
 		goto error_ret;

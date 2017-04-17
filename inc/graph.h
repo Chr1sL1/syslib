@@ -19,6 +19,7 @@ struct gnode
 	struct rbnode table_node;
 	struct dlist ngb_list;
 	void* udata;
+	int visited;
 };
 
 struct graph
@@ -26,7 +27,7 @@ struct graph
 	struct rbtree gnode_table;
 };
 
-typedef void (*_search_func)(struct gnode*);
+typedef int (*_search_func)(struct gnode*);
 
 int graph_new(struct graph* g);
 int graph_add_node(struct graph* g, struct gnode* node, int key);

@@ -9,6 +9,7 @@
 #include "dlist.h"
 #include "graph.h"
 #include "common.h"
+#include "utask.h"
 
 const char* share_memory_name = "test_shm_17x";
 

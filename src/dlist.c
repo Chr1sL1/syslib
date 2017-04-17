@@ -44,6 +44,9 @@ int lst_insert_before(struct dlist* lst, struct dlnode* suc, struct dlnode* node
 
 	++lst->size;
 
+	printf("head: %p, tail: %p.", &lst->head, &lst->tail);
+	printf("node: %p, prev: %p, next: %p.\n", node, node->prev, node->next);
+
 	return 1;
 error_ret:
 	return 0;
@@ -70,6 +73,7 @@ error_ret:
 int lst_remove(struct dlist* lst, struct dlnode* node)
 {
 	if(!lst || !node) goto error_ret;
+	if(lst->tail.prev == &lst->head || lst->head.next == &lst->tail) goto error_ret;
 	if(node == &lst->head || node == &lst->tail) goto error_ret;
 
 	node->prev->next = node->next;
@@ -84,4 +88,41 @@ int lst_remove(struct dlist* lst, struct dlnode* node)
 error_ret:
 	return 0;
 }
+
+int lst_push_back(struct dlist* lst, struct dlnode* node)
+{
+	return lst_insert_before(lst, &lst->tail, node);
+error_ret:
+	return 0;
+}
+
+int lst_push_front(struct dlist* lst, struct dlnode* node)
+{
+	return lst_insert_after(lst, &lst->head, node);
+error_ret:
+	return 0;
+}
+
+struct dlnode* lst_pop_back(struct dlist* lst)
+{
+	if(!lst) goto error_ret;
+
+	struct dlnode* node = lst->tail.prev;
+	if(!lst_remove(lst, node)) goto error_ret;
+	return node;
+error_ret:
+	return NULL;
+}
+
+struct dlnode* lst_pop_front(struct dlist* lst)
+{
+	if(!lst) goto error_ret;
+
+	struct dlnode* node = lst->head.next;
+	if(!lst_remove(lst, node)) goto error_ret;
+	return node;
+error_ret:
+	return NULL;
+}
+
 
