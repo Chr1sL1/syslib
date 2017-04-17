@@ -7,7 +7,7 @@ include_directories(inc)
 aux_source_directory(test src_list)
 add_subdirectory(src)
 
-add_compile_options(-O1)
+add_compile_options(-g)
 add_compile_options(-Wint-to-pointer-cast)
 add_compile_options(-Wpointer-to-int-cast)
 

@@ -17,73 +17,8 @@ struct ucontext ctx1;
 struct ucontext ctx2;
 struct ucontext ctx_default;
 
-char stk1[16384];
-char stk2[16384];
-char stk_default[16384];
 int test_arr[100];
 
-struct ad_test
-{
-	int _value1;
-	int _value2;
-};
-
-#pragma comment(push,1)
-struct ut
-{
-	union
-	{
-		int* ptr;
-		struct 
-		{
-			unsigned long ptr63 : 63;
-			unsigned char clr : 1;
-		};
-	};
-};
-
-struct utt
-{
-	union
-	{
-		unsigned long v;
-		struct
-		{
-			unsigned char a;
-			unsigned char b;
-			unsigned char c;
-			unsigned char d;
-			unsigned char e;
-			unsigned char f;
-			unsigned char g;
-			unsigned char h;
-		};
-
-	};
-};
-
-#pragma comment(pop)
-
-
-
-//void test_link(void)
-//{
-//	struct ad_test __test;
-//	printf("_head addr: %p\n", &__test._head);
-//
-//	__test._value1 = 746;
-//	__test._value2 = 626;
-//
-//	struct ad_test* p = (struct ad_test*)((void*)&__test._head - (void*)&((struct ad_test*)0)->_head);
-//
-//	printf("off head addr: %p\n", &((struct ad_test*)0)->_head);
-//	printf("actual addr: %p\n", &__test);
-//	printf("p addr: %p\n", p);
-//	printf("%d,%d\n", p->_value1, p->_value2);
-//
-//}
-//
-//
 void swap(int* a, int* b)
 {
 	int tmp = *a;
@@ -235,156 +170,50 @@ void test_lst(void)
 	printf("\n");
 }
 
-void func1(char* param)
+void tfun(struct utask* t)
 {
-	printf("func1 executed.%s\n", param);
-	if(swapcontext(&ctx1, &ctx2) < 0)
-		goto error_ret;
-
-	printf("func1 return.\n");
-	return;
-error_ret:
-	printf("func1 error.\n");
-	return;
-}
-
-void func2(void)
-{
-	printf("func2 executed.\n");
-
-	if(swapcontext(&ctx2, &ctx1) < 0)
-		goto error_ret;
-
-	printf("func2 return.\n");
-	return;
-error_ret:
-	printf("func2 error.\n");
-}
-
-void func_default(void)
-{
-	while(1)
+	for(int i = 0; i < sizeof(test_arr) / sizeof(int); i++)
 	{
-		printf("waiting...\n");
+		printf("arr[i] = %d\n", test_arr[i]);
+
+		if(i % 2 == 0)
+			yield_task(t);
+
 		sleep(1);
 	}
 }
 
-
-//void test_ctx(void)
-//{
-//	if(getcontext(&ctx1) < 0)
-//		goto error_ret;
-//
-//	ctx1.uc_stack.ss_sp = stk1;
-//	ctx1.uc_stack.ss_size = sizeof(stk1);
-//	ctx1.uc_link = &ctx2;
-//	makecontext(&ctx1, func1, 1, (int)(share_memory_name)); 
-//
-//	if(getcontext(&ctx2) < 0)
-//		goto error_ret;
-//
-//	ctx2.uc_stack.ss_sp = stk2;
-//	ctx2.uc_stack.ss_size = sizeof(stk2);
-//	ctx2.uc_link = &ctx_default;
-//	makecontext(&ctx2, func2, 0);
-//
-//	if(getcontext(&ctx_default) < 0)
-//		goto error_ret;
-//
-//	ctx_default.uc_stack.ss_sp = stk_default;
-//	ctx_default.uc_stack.ss_size = sizeof(stk_default);
-//	ctx_default.uc_link = NULL;
-//	makecontext(&ctx_default, func_default, 0);
-//
-//	printf("test_stk started.\n");
-//
-//	//	if(swapcontext(&ctx_default, &ctx1) < 0)
-//	if(setcontext(&ctx1) < 0)
-//		goto error_ret;
-//	printf("test_stk finished.\n");
-//
-//	return;
-//error_ret:
-//	perror("fk..\n");
-//	return;
-//}
-
-void insertion_sort(int* a, int count)
+void test_task(void)
 {
-	for(int i = 0; i < count; i++)
+	void* ustack = malloc(1024);
+	struct utask* tsk = make_task(ustack, 1024, tfun);
+	if(!tsk) goto error_ret;
+
+	for(int i = 0; i < sizeof(test_arr) / sizeof(int); i++)
 	{
-		for(int j = i + 1; j < count; j++)
-		{
-			if(a[j] < a[i])
-			{
-				int tmp = a[j];
-				a[j] = a[i];
-				a[i] = tmp;
-			}
-		}
+		test_arr[i] = i;
 	}
+
+	run_task(tsk, 0);
+
+	for(int i = 0; i < sizeof(test_arr) / sizeof(int); i++)
+	{
+		printf("%d\n", test_arr[i]);
+		if(i % 3 == 0)
+			resume_task(tsk);
+
+		sleep(1);
+	}
+
+error_ret:
+	free(ustack);
+	return;
 }
 
 int main(void)
 {
-	//	test_link();
-	//
-	//	struct shm_host_ptr* __ptr = shmem_new(share_memory_name, 1024 * 1024 * 1024);
-	//	struct shm_client_ptr* __read_ptr = NULL;
-	//
-	//	if(!__ptr)
-	//		return -1;
-	//
-	//	sprintf((char*)__ptr->_the_addr._addr, "hello world.");
-	//
-	//	__read_ptr = shmem_open(share_memory_name);
-	//
-	//	if(!__read_ptr)
-	//		return -1;
-	//
-	//	printf("content: %s\n", (char*)__read_ptr->_the_addr._addr);
-	//	printf("pid: %u, groupid: %u\n", getpid(), getpgrp());
-	//
-	//
-	//	shmem_close(__read_ptr);
-	//	shmem_destroy(__ptr);
-	//
-	//	test_lst();
-	//	dd
-	//
-	//	test_ctx();
-	//
-	//
-
-
-	//	struct utt _utt;
-	//	_utt.v = 0x0102030405060708;
-	//
-	//	printf("%x\n", _utt.a);
-	//	printf("%x\n", _utt.b);
-	//	printf("%x\n", _utt.c);
-	//	printf("%x\n", _utt.d);
-	//	printf("%x\n", _utt.e);
-	//	printf("%x\n", _utt.f);
-	//	printf("%x\n", _utt.g);
-	//	printf("%x\n", _utt.h);
-	//
-	//
-	//
-	//	int a = 0x1234ABCD;
-	//	struct ut u;
-	//	u.ptr = &a;
-	//	printf("%.16p\n", u.ptr);
-	//	printf("%.16p\n", (int*)u.ptr63);
-	//
-	//	u.clr |= 0x8000000000000000;
-	//	printf("%d\n", u.clr);
-	//
-	//	u.clr &= ~0x8000000000000000;
-	//	printf("%x\n", *(int*)(u.ptr63));
-
-	test_rbtree(); 
+	test_task();
+//	test_rbtree(); 
 //	test_lst();
 
 	return 0;

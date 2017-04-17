@@ -2,7 +2,9 @@
 #define __utask_h__
 
 
-typedef void (*task_function)(void*);
+struct utask;
+
+typedef void (*task_function)(struct utask*, void*);
 
 struct utask
 {
@@ -12,11 +14,11 @@ struct utask
 };
 
 // for temp use
-struct utask* make_task(void* stackptr, long stacksize, task_function _func);
+struct utask* make_task(void* stackptr, long stacksize, task_function tfunc);
 void del_task(struct utask* tsk);
 //
 
-int run_task(struct utask* tsk);
+int run_task(struct utask* tsk, void* udata);
 int yield_task(struct utask* tsk);
 int resume_task(struct utask* tsk);
 

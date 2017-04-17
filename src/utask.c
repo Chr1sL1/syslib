@@ -53,11 +53,11 @@ struct __utask
 	struct rbnode _rbnode;
 };
 
-extern void asm_run_task(struct u_task* tsk);
-extern void asm_yield_task(struct u_task* tsk);
-extern void asm_resume_task(struct u_task* tsk);
+extern void asm_run_task(struct __utask* tsk, void* udata);
+extern void asm_yield_task(struct __utask* tsk);
+extern void asm_resume_task(struct __utask* tsk);
 
-static struct __utask* _conv_task(struct u_task* tsk)
+static struct __utask* _conv_task(struct utask* tsk)
 {
 	struct __utask* itsk = 0;
 	if(!tsk) goto error_ret;
@@ -70,19 +70,21 @@ error_ret:
 	return 0;
 }
 
-struct utask* make_task(void* stack_ptr, long stack_size, task_function _func)
+struct utask* make_task(void* stack_ptr, long stack_size, task_function tfunc)
 {
 	struct __utask* tsk = (struct __utask*)malloc(sizeof(struct __utask));
 
 	if(!tsk) goto error_ret;
 	if(!stack_ptr) goto error_ret;
 	if(stack_size <= 0) goto error_ret;
-	if(!_func) goto error_ret;
+	if(!tfunc) goto error_ret;
 
 	memset(tsk, 0, sizeof(struct __utask));
 	tsk->_utsk._stack = stack_ptr;
 	tsk->_utsk._stack_size = stack_size;
-	tsk->_utsk._func = _func;
+	tsk->_utsk._func = tfunc;
+	tsk->_magic_number = UTASK_MAGIC_NUM;
+	tsk->_task_state = uts_inited;
 
 	return &tsk->_utsk;
 error_ret:
@@ -99,12 +101,13 @@ error_ret:
 	return;
 }
 
-int run_task(struct utask* tsk)
+int run_task(struct utask* tsk, void* udata)
 {
 	struct __utask* itsk = _conv_task(tsk);
 	if(itsk->_task_state != uts_inited) goto error_ret;
+
 	itsk->_task_state = uts_running; 
-	asm_run_task(itsk);
+	asm_run_task(itsk, udata);
 
 	return 1;
 error_ret:
@@ -115,6 +118,8 @@ int yield_task(struct utask* tsk)
 {
 	struct __utask* itsk = _conv_task(tsk);
 	if(itsk->_task_state != uts_running) goto error_ret;
+
+	itsk->_task_state = uts_waiting; 
 	asm_yield_task(itsk);
 
 	return 1;
@@ -126,6 +131,8 @@ int resume_task(struct utask* tsk)
 {
 	struct __utask* itsk = _conv_task(tsk);
 	if(itsk->_task_state != uts_waiting) goto error_ret;
+
+	itsk->_task_state = uts_running; 
 	asm_resume_task(itsk);
 
 	return 1;

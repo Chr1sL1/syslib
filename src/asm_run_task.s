@@ -15,8 +15,8 @@ asm_run_task:
 	movq	%rsp, %r9
 
 	movq	(%rdi), %rdx
-	movq	8(%rdi), %rsi			# %rsi: stack size
-	leaq	(%rdx, %rsi, 1), %rsp	# move rsp to the stack top
+	movq	8(%rdi), %rax			# %rax: stack size
+	leaq	(%rdx, %rax, 1), %rsp	# move rsp to the stack top
 
 #run under usr stack:
 	pushq	%rbp
