@@ -16,17 +16,9 @@ asm_yield_task:
 	addq	$72, %rdi
 
 	movq	%rax, (%rdi)
-	movq	%rcx, 16(%rdi)
 	movq	%rdx, 24(%rdi)
-	movq	%rsi, 32(%rdi)
-#	movq	%rdi, 40(%rdi)
 	movq	%rsp, 48(%rdi)
 	movq	%rbp, 56(%rdi)	# rbp of task function
-
-	movq	%r8, 72(%rdi)
-	movq	%r9, 80(%rdi)
-	movq	%r10, 88(%rdi)
-	movq	%r11, 96(%rdi)
 
 	leaq	0x0(%rip), %r8
 	nop						###2

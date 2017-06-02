@@ -9,8 +9,6 @@ asm_run_task:
 	pushq	%rbx
 
 	pushq	%rdi
-#	subq	$8, %rsp
-#	movq	%rdi, (%rsp)
 
 	movq	%rsp, %r9
 

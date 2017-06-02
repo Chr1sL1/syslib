@@ -17,17 +17,9 @@ asm_resume_task:
 	addq	$72, %rdi
 
 	movq	(%rdi), %rax
-	movq	16(%rdi), %rcx
 	movq	24(%rdi), %rdx
-	movq	32(%rdi), %rsi
-#	movq	40(%rdi), %rdi
 	movq	48(%rdi), %rdx		# temp save %rsp in rdx
 	movq	56(%rdi), %rbp
-
-	movq	72(%rdi), %r8
-	movq	80(%rdi), %r9
-	movq	88(%rdi), %r10
-	movq	96(%rdi), %r11
 
 	movq	32(%rbx), %r9
 
