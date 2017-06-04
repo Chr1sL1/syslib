@@ -1,7 +1,7 @@
 #include "misc.h"
 
 
-int align_to_2power(unsigned int val)
+unsigned int align_to_2power(unsigned int val)
 {
 	__asm__("bsrl	%edi, %ecx\n"\
 			"bsfl	%edi, %edx\n"\
@@ -20,6 +20,13 @@ int is_2power(unsigned int val)
 			"leal	0x1(%ecx), %esi\n"\
 			"cmpl	%ecx, %edx\n"\
 			"sete	%al\n");
+}
+
+unsigned int align8(unsigned val)
+{
+	__asm__("addl	$8, %edi\n"\
+			"andl	$-8, %edi\n"\
+			"movl	%edi, %eax");
 }
 
 void* align16(void* p)

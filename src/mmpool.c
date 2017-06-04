@@ -6,8 +6,6 @@
 #define CHUNK_LABEL (0xabab1212dfdf6969)
 #define TAIL_LABEL (0x1a2b3c4d)
 
-#define MIN_PAYLOAD_SIZE (8)
-#define MAX_PAYLOAD_SIZE (MIN_PAYLOAD_SIZE * (1 << (FREE_LIST_COUNT - 1)))
 
 #pragma pack(1)
 // 8 bytes payload head
@@ -28,10 +26,15 @@ struct _block_tail
 #pragma pack()
 
 #define BLOCK_BIT_USED 1
+#define BLOCK_BIT_BUDDY 2
 
 #define HEAD_TAIL_SIZE (sizeof(struct _block_head) + sizeof(struct _block_tail))
-#define MIN_BLOCK_SIZE (MIN_PAYLOAD_SIZE + HEAD_TAIL_SIZE)
-#define MAX_BLOCK_SIZE (MAX_PAYLOAD_SIZE + HEAD_TAIL_SIZE)
+
+#define MIN_BLOCK_SIZE (32)
+#define MAX_BLOCK_SIZE (MIN_BLOCK_SIZE * (1 << (FREE_LIST_COUNT - 1)))
+
+#define MIN_PAYLOAD_SIZE (MIN_BLOCK_SIZE - HEAD_TAIL_SIZE)
+#define MAX_PAYLOAD_SIZE (MAX_BLOCK_SIZE - HEAD_TAIL_SIZE)
 
 struct _free_list_node
 {
@@ -63,6 +66,12 @@ struct _chunk_head
 	unsigned long _reserved;
 };
 
+static long _lnk_free_node(struct _mmpool_impl* mmpi, struct _block_head* hd, long flh_idx);
+static long _unlnk_free_node(struct _mmpool_impl* mmpi, long flh_idx, struct _block_head** bh);
+static long  _mmp_init_block(struct _mmpool_impl* mmpi, void* blk, long head_idx);
+static long _mmp_load_chunk(struct _mmpool_impl* mmpi);
+
+
 inline long _payload_size(long block_size)
 {
 	return block_size - HEAD_TAIL_SIZE;
@@ -80,7 +89,7 @@ inline long _block_size(long payload_size)
 
 inline long _block_size_idx(long free_list_idx)
 {
-	return MIN_PAYLOAD_SIZE * (1 << free_list_idx) + HEAD_TAIL_SIZE;
+	return MIN_BLOCK_SIZE * (1 << free_list_idx);
 }
 
 inline void* _block_head(void* payload_addr)
@@ -90,7 +99,8 @@ inline void* _block_head(void* payload_addr)
 
 inline struct _block_tail* _block_tail(void* blk)
 {
-	return (struct _block_tail*)(blk + HEAD_TAIL_SIZE - sizeof(struct _block_tail));
+	struct _block_head* hd = (struct _block_head*)blk;
+	return (struct _block_tail*)(hd + hd->_block_size - sizeof(struct _block_tail));
 }
 
 inline struct _block_head* _next_block(struct _block_head* _block)
@@ -98,12 +108,27 @@ inline struct _block_head* _next_block(struct _block_head* _block)
 	return (struct _block_head*)((void*)_block + _block->_block_size);
 }
 
+inline long _normalize_payload_size(long payload_size)
+{
+	long blk_size = _block_size(payload_size);
+	blk_size = align_to_2power(blk_size);
+	return _payload_size(blk_size);
+}
+
+inline long _normalize_block_size(long payload_size)
+{
+	long blk_size = _block_size(payload_size);
+	blk_size = align_to_2power(blk_size);
+
+	return blk_size;
+}
+
 inline long _flh_idx(long payload_size)
 {
-	if(payload_size < MIN_PAYLOAD_SIZE || payload_size > MAX_PAYLOAD_SIZE) goto error_ret;
-	payload_size = align_to_2power(payload_size);
+	long blk_size = _normalize_block_size(payload_size);
+	if(blk_size < MIN_BLOCK_SIZE || blk_size > MAX_BLOCK_SIZE) goto error_ret;
 
-	return log_2(payload_size) / MIN_PAYLOAD_SIZE;
+	return log_2(blk_size) / MIN_BLOCK_SIZE;
 error_ret:
 	return -1;
 }
@@ -132,11 +157,13 @@ error_ret:
 	return -1;
 }
 
-static struct _block_head* _unlnk_free_node(struct _mmpool_impl* mmpi, long flh_idx)
+static long _unlnk_free_node(struct _mmpool_impl* mmpi, long flh_idx, struct _block_head** bh)
 {
+	*bh = 0;
 
-error_ret:
 	return 0;
+error_ret:
+	return -1;
 }
 
 static long  _mmp_init_block(struct _mmpool_impl* mmpi, void* blk, long head_idx)
@@ -205,9 +232,9 @@ static long _mmp_load_chunk(struct _mmpool_impl* mmpi)
 	long flh_idx = 0;
 	struct _block_head* bhd = 0;
 
-	struct _chunk_head* hd = (struct _chunk_head*)(mmpi->_pool.mm_addr);
-	if(!hd) goto error_ret;
-	if(hd->_chunck_label != CHUNK_LABEL) goto error_ret;
+	struct _chunk_head* chd = (struct _chunk_head*)(mmpi->_pool.mm_addr);
+	if(!chd) goto error_ret;
+	if(chd->_chunck_label != CHUNK_LABEL) goto error_ret;
 
 	chk = mmpi->_pool.mm_addr + sizeof(struct _chunk_head);
 	while(chk <= mmpi->_pool.mm_addr + mmpi->_pool.mm_size)
@@ -305,15 +332,21 @@ void mmp_del(struct mmpool* mmp)
 
 void* mmp_alloc(struct mmpool* mmp, long payload_size)
 {
+	long rslt = 0;
 	long flh_idx = 0;
 	struct _mmpool_impl* mmpi = (struct _mmpool_impl*)mmp;
+	struct _block_head* bh = 0;
 
 	if(payload_size > 0xFFFFFFFF) goto error_ret;
 	if(payload_size > MAX_PAYLOAD_SIZE) goto error_ret;
 
-	payload_size = align_to_2power(payload_size);
 	flh_idx = _flh_idx(payload_size);
+	rslt = _unlnk_free_node(mmpi, flh_idx, &bh);
+	if(rslt < 0) goto error_ret;
 
+	bh->_flag |= BLOCK_BIT_USED;
+
+	return _payload_addr(bh);
 error_ret:
 	return 0;
 }
@@ -326,8 +359,5 @@ void mmp_free(struct mmpool* mmp, void* p)
 error_ret:
 	return;
 }
-
-
-
 
 

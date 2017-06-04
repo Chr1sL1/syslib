@@ -1,7 +1,6 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <stdlib.h>
-#include <ucontext.h>
 #include <sys/time.h>
 
 #include "shmem.h"
@@ -12,10 +11,6 @@
 #include "utask.h"
 
 const char* share_memory_name = "test_shm_17x";
-
-struct ucontext ctx1;
-struct ucontext ctx2;
-struct ucontext ctx_default;
 
 int test_arr[100];
 
@@ -212,7 +207,10 @@ error_ret:
 
 int main(void)
 {
-	test_task();
+//	test_task();
+
+	unsigned int aaa = align_to_2power(14);
+
 //	test_rbtree(); 
 //	test_lst();
 
