@@ -1,5 +1,7 @@
 #include "utask.h"
 #include "rbtree.h"
+#include <stdlib.h>
+#include <string.h>
 
 #define UTASK_MAGIC_NUM	 0x1234567887654321
 

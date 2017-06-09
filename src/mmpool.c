@@ -1,4 +1,5 @@
 #include <stdlib.h>
+#include <string.h>
 #include "mmpool.h"
 #include "misc.h"
 
@@ -12,7 +13,7 @@
 struct _block_head
 {
 	unsigned _flag : 4;
-	unsigned _reserve : 28;
+	unsigned _fln_idx : 28;
 	unsigned int _block_size;
 };
 
@@ -25,8 +26,9 @@ struct _block_tail
 
 #pragma pack()
 
-#define BLOCK_BIT_USED 1
-#define BLOCK_BIT_BUDDY 2
+#define BLOCK_BIT_USED			1
+#define BLOCK_BIT_BUDDY			2
+#define BLOCK_BIT_BUDDY_WAITING	4
 
 #define HEAD_TAIL_SIZE (sizeof(struct _block_head) + sizeof(struct _block_tail))
 
@@ -66,8 +68,8 @@ struct _chunk_head
 	unsigned long _reserved;
 };
 
-static long _lnk_free_node(struct _mmpool_impl* mmpi, struct _block_head* hd, long flh_idx);
-static long _unlnk_free_node(struct _mmpool_impl* mmpi, long flh_idx, struct _block_head** bh);
+static long _return_free_node(struct _mmpool_impl* mmpi, struct _block_head* hd, long flh_idx);
+static long _take_free_node(struct _mmpool_impl* mmpi, long flh_idx, struct _block_head** bh);
 static long  _mmp_init_block(struct _mmpool_impl* mmpi, void* blk, long head_idx);
 static long _mmp_load_chunk(struct _mmpool_impl* mmpi);
 
@@ -97,28 +99,33 @@ inline void* _block_head(void* payload_addr)
 	return (struct _block_head*)(payload_addr + sizeof(struct _block_head));
 }
 
-inline struct _block_tail* _block_tail(void* blk)
+inline struct _block_tail* _block_tail(struct _block_head* bh)
 {
-	struct _block_head* hd = (struct _block_head*)blk;
-	return (struct _block_tail*)(hd + hd->_block_size - sizeof(struct _block_tail));
+	return (struct _block_tail*)(bh + bh->_block_size - sizeof(struct _block_tail));
 }
 
-inline struct _block_head* _next_block(struct _block_head* _block)
+inline struct _block_head* _prev_block(struct _block_head* bh)
 {
-	return (struct _block_head*)((void*)_block + _block->_block_size);
+	struct _block_tail* tl = (struct _block_tail*)((void*)bh - sizeof(struct _block_tail));
+	return (struct _block_head*)((void*)bh - tl->_block_size);
+}
+
+inline struct _block_head* _next_block(struct _block_head* bh)
+{
+	return (struct _block_head*)((void*)bh + bh->_block_size);
 }
 
 inline long _normalize_payload_size(long payload_size)
 {
 	long blk_size = _block_size(payload_size);
-	blk_size = align_to_2power(blk_size);
+	blk_size = align_to_2power_top(blk_size);
 	return _payload_size(blk_size);
 }
 
 inline long _normalize_block_size(long payload_size)
 {
 	long blk_size = _block_size(payload_size);
-	blk_size = align_to_2power(blk_size);
+	blk_size = align_to_2power_top(blk_size);
 
 	return blk_size;
 }
@@ -133,7 +140,13 @@ error_ret:
 	return -1;
 }
 
-static long _lnk_free_node(struct _mmpool_impl* mmpi, struct _block_head* hd, long flh_idx)
+inline void _make_block_tail(struct _block_tail* tail, unsigned int block_size)
+{
+	tail->_tail_label = TAIL_LABEL;
+	tail->_block_size = block_size;
+}
+
+static long _return_free_node(struct _mmpool_impl* mmpi, struct _block_head* hd, long flh_idx)
 {
 	long fln_idx = 0;
 
@@ -145,6 +158,8 @@ static long _lnk_free_node(struct _mmpool_impl* mmpi, struct _block_head* hd, lo
 
 	if(mmpi->_next_aval_fln_idx < 0)
 		fln_idx = ++mmpi->_max_used_fln_idx;
+	else
+		mmpi->_next_aval_fln_idx = -1;
 
 	mmpi->_fln_pool[fln_idx]._block = hd;
 	mmpi->_fln_pool[fln_idx]._next_free_node = mmpi->_flh[flh_idx]._head_node;
@@ -157,13 +172,66 @@ error_ret:
 	return -1;
 }
 
-static long _unlnk_free_node(struct _mmpool_impl* mmpi, long flh_idx, struct _block_head** bh)
+static long _take_free_node(struct _mmpool_impl* mmpi, long flh_idx, struct _block_head** rbh)
 {
-	*bh = 0;
+	struct _free_list_node* fln = 0;
+	struct _block_head* bh = 0;
+
+	*rbh = 0;
+
+	while(1)
+	{
+		if(flh_idx >= FREE_LIST_COUNT) goto error_ret;
+
+		fln = mmpi->_flh[flh_idx]._head_node;
+		if(fln != 0)
+			break;
+
+		++flh_idx;
+	}
+
+	mmpi->_flh[flh_idx]._head_node = fln->_next_free_node;
+	--mmpi->_flh[flh_idx]._node_count;
+
+	mmpi->_next_aval_fln_idx = fln->_idx;
+	*rbh = fln->_block;
+	(*rbh)->_fln_idx = fln->_idx;
 
 	return 0;
 error_ret:
 	return -1;
+}
+
+static void _try_spare_block(struct _mmpool_impl* mmpi, struct _block_head* bh, unsigned int payload_size)
+{
+	struct _block_head* h = 0;
+	struct _block_tail* t = 0;
+
+	payload_size = align8(payload_size);
+
+	void* end = (void*)bh + bh->_block_size;
+	void* sp = (void*)bh + HEAD_TAIL_SIZE + payload_size;
+
+	unsigned long offset = align_to_2power_floor((unsigned long)end - (unsigned long)sp);
+	if(offset < MIN_BLOCK_SIZE) goto error_ret;
+
+	sp = end - offset;
+	t = (struct _block_tail*)(sp - sizeof(struct _block_tail));
+	_make_block_tail(t, _block_size(payload_size));
+
+	h = (struct _block_head*)sp;
+	h->_block_size = offset;
+	h->_fln_idx = 0;
+	h->_flag = 0;
+
+	t = (struct _block_tail*)(end - sizeof(struct _block_tail));
+	_make_block_tail(t, offset);
+
+	_return_free_node(mmpi, h, log_2(offset));
+	bh->_flag |= BLOCK_BIT_BUDDY;
+
+error_ret:
+	return;
 }
 
 static long  _mmp_init_block(struct _mmpool_impl* mmpi, void* blk, long head_idx)
@@ -173,13 +241,12 @@ static long  _mmp_init_block(struct _mmpool_impl* mmpi, void* blk, long head_idx
 	struct _block_tail* tl = _block_tail(blk);
 
 	hd->_flag = 0;
-	hd->_reserve = 0;
+	hd->_fln_idx = 0;
 	hd->_block_size = _block_size_idx(head_idx);
 
-	tl->_tail_label = TAIL_LABEL;
-	tl->_block_size = hd->_block_size;
+	_make_block_tail(tl, hd->_block_size);
 
-	rslt = _lnk_free_node(mmpi, hd, head_idx);
+	rslt = _return_free_node(mmpi, hd, head_idx);
 	if(rslt < 0) goto error_ret;
 
 	return 0;
@@ -247,7 +314,7 @@ static long _mmp_load_chunk(struct _mmpool_impl* mmpi)
 		flh_idx = _flh_idx(payload_size);
 		if(flh_idx < 0) goto error_ret;
 
-		rslt = _lnk_free_node(mmpi, bhd, flh_idx);
+		rslt = _return_free_node(mmpi, bhd, flh_idx);
 		if(rslt < 0) goto error_ret;
 	}
 
@@ -341,8 +408,10 @@ void* mmp_alloc(struct mmpool* mmp, long payload_size)
 	if(payload_size > MAX_PAYLOAD_SIZE) goto error_ret;
 
 	flh_idx = _flh_idx(payload_size);
-	rslt = _unlnk_free_node(mmpi, flh_idx, &bh);
+	rslt = _take_free_node(mmpi, flh_idx, &bh);
 	if(rslt < 0) goto error_ret;
+
+	_try_spare_block(mmpi, bh, payload_size);
 
 	bh->_flag |= BLOCK_BIT_USED;
 
@@ -354,6 +423,7 @@ error_ret:
 void mmp_free(struct mmpool* mmp, void* p)
 {
 	struct _mmpool_impl* mmpi = (struct _mmpool_impl*)mmp;
+
 
 	return;
 error_ret:

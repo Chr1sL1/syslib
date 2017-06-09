@@ -1,13 +1,21 @@
 #include "misc.h"
 
 
-unsigned int align_to_2power(unsigned int val)
+unsigned int align_to_2power_top(unsigned int val)
 {
 	__asm__("bsrl	%edi, %ecx\n"\
 			"bsfl	%edi, %edx\n"\
 			"leal	0x1(%ecx), %esi\n"\
 			"cmpl	%ecx, %edx\n"\
 			"cmovnel	%esi, %ecx\n"\
+			"movl	$1, %eax\n"\
+			"sall	%cl, %eax\n");
+}
+
+unsigned int align_to_2power_floor(unsigned int val)
+{
+	__asm__("bsrl	%edi, %ecx\n"\
+			"leal	0x1(%ecx), %esi\n"\
 			"movl	$1, %eax\n"\
 			"sall	%cl, %eax\n");
 }
@@ -39,7 +47,7 @@ void* align16(void* p)
 unsigned long rdtsc(void)
 {
 	__asm__("rdtsc\n"\
-			"salq	%rdx\n"\
+			"salq	$32, %rdx\n"\
 			"addq	%rdx, %rax");
 }
 

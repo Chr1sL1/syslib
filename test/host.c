@@ -9,6 +9,7 @@
 #include "graph.h"
 #include "common.h"
 #include "utask.h"
+#include "misc.h"
 
 const char* share_memory_name = "test_shm_17x";
 
@@ -165,7 +166,7 @@ void test_lst(void)
 	printf("\n");
 }
 
-void tfun(struct utask* t)
+void tfun(struct utask* t, void* p)
 {
 	for(int i = 0; i < sizeof(test_arr) / sizeof(int); i++)
 	{
@@ -209,7 +210,13 @@ int main(void)
 {
 //	test_task();
 
-	unsigned int aaa = align_to_2power(14);
+
+	unsigned long r1 = rdtsc();
+	unsigned int aaa = align_to_2power_floor(128);
+	unsigned long r2 = rdtsc();
+	printf("aaa = %u\n", aaa);
+	printf("cycle = %lu\n", r2 - r1);
+
 
 //	test_rbtree(); 
 //	test_lst();
