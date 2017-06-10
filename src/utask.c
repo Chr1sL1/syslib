@@ -1,5 +1,6 @@
 #include "utask.h"
 #include "rbtree.h"
+#include "misc.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -109,6 +110,7 @@ int run_task(struct utask* tsk, void* udata)
 	if(itsk->_task_state != uts_inited) goto error_ret;
 
 	itsk->_task_state = uts_running; 
+
 	asm_run_task(itsk, udata);
 
 	return 1;
@@ -122,6 +124,7 @@ int yield_task(struct utask* tsk)
 	if(itsk->_task_state != uts_running) goto error_ret;
 
 	itsk->_task_state = uts_waiting; 
+
 	asm_yield_task(itsk);
 
 	return 1;

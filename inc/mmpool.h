@@ -11,7 +11,7 @@ struct mmpool* mmp_new(void* addr, long size);
 void mmp_del(struct mmpool* mmp);
 
 void* mmp_alloc(struct mmpool* mmp, long size);
-void mmp_free(struct mmpool* mmp, void* p);
+int mmp_free(struct mmpool* mmp, void* p);
 
 
 #endif

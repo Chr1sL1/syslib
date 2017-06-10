@@ -55,6 +55,7 @@ void print_node(struct rbnode* node)
 
 void test_rbtree(void)
 {
+	unsigned long r1 = 0, r2 = 0;
 	int test_arr_count= sizeof(test_arr) / sizeof(int);
 	struct timeval tv_begin, tv_end;
 
@@ -76,7 +77,10 @@ void test_rbtree(void)
 
 		node->key = test_arr[i];
 
+		r1 = rdtsc();
 		rb_insert(&test_tree, node);
+		r2 = rdtsc();
+		printf("rbinsert: %lu cycles.", r2 - r1);
 
 //		pre_order(test_tree.root, print_node);
 //		printf("\n");
@@ -88,9 +92,9 @@ void test_rbtree(void)
 	printf("insert elapse: %ld.\n", (long)tv_end.tv_usec - (long)tv_begin.tv_usec);
 	printf("rooooooooooooooooooot:%ld\n", test_tree.root->key);
 
-	printf("traverse: \n");
-	rb_traverse(&test_tree, print_node);	
-	printf("\n");
+//	printf("traverse: \n");
+//	rb_traverse(&test_tree, print_node);	
+//	printf("\n");
 
 	random_shuffle(test_arr, test_arr_count);
 
@@ -98,7 +102,10 @@ void test_rbtree(void)
 
 	for(int i = 0; i < test_arr_count; i++)
 	{
+		r1 = rdtsc();
 		struct rbnode* node = rb_remove(&test_tree, test_arr[i]);
+		r2 = rdtsc();
+		printf("rbremove: %lu cycles.", r2 - r1);
 
 		if(node)
 		{
@@ -170,17 +177,18 @@ void tfun(struct utask* t, void* p)
 {
 	for(int i = 0; i < sizeof(test_arr) / sizeof(int); i++)
 	{
-		printf("arr[i] = %d\n", test_arr[i]);
+//		printf("arr[i] = %d\n", test_arr[i]);
 
 		if(i % 2 == 0)
 			yield_task(t);
 
-		sleep(1);
+//		sleep(1);
 	}
 }
 
 void test_task(void)
 {
+	unsigned long r1 = 0, r2 = 0;
 	void* ustack = malloc(1024);
 	struct utask* tsk = make_task(ustack, 1024, tfun);
 	if(!tsk) goto error_ret;
@@ -190,15 +198,23 @@ void test_task(void)
 		test_arr[i] = i;
 	}
 
+	r1 = rdtsc();
 	run_task(tsk, 0);
+	r2 = rdtsc();
+	printf("runtask: %lu cycles.\n", r2 - r1);
 
 	for(int i = 0; i < sizeof(test_arr) / sizeof(int); i++)
 	{
-		printf("%d\n", test_arr[i]);
+//		printf("%d\n", test_arr[i]);
 		if(i % 3 == 0)
+		{
+			r1 = rdtsc();
 			resume_task(tsk);
+			r2 = rdtsc();
+			printf("resume: %lu cycles.\n", r2 - r1);
+		}
 
-		sleep(1);
+//		sleep(1);
 	}
 
 error_ret:
@@ -206,19 +222,54 @@ error_ret:
 	return;
 }
 
+unsigned int at2f(unsigned v)
+{
+	int i = 32;
+	unsigned int k = 0;
+
+	for(; i >= 0; --i)
+	{
+		k = (1 << i);
+		if((k & v) != 0)
+			break;
+	}
+
+	return k;
+}
+
+unsigned int at2t(unsigned v)
+{
+	int i = 32;
+	unsigned int k = 0;
+
+	for(; i >= 0; --i)
+	{
+		k = (1 << i);
+		if((k & v) != 0)
+			break;
+	}
+
+	return (1 << (k + 1));
+}
+
 int main(void)
 {
-//	test_task();
-
 
 	unsigned long r1 = rdtsc();
-	unsigned int aaa = align_to_2power_floor(128);
+	unsigned int aaa = align_to_2power_top(11);
 	unsigned long r2 = rdtsc();
 	printf("aaa = %u\n", aaa);
 	printf("cycle = %lu\n", r2 - r1);
 
+	r1 = rdtsc();
+	aaa = at2t(11);
+	r2 = rdtsc();
+	printf("aaa = %u\n", aaa);
+	printf("cycle = %lu\n", r2 - r1);
 
-//	test_rbtree(); 
+
+	test_rbtree(); 
+	test_task();
 //	test_lst();
 
 	return 0;

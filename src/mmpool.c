@@ -27,8 +27,9 @@ struct _block_tail
 #pragma pack()
 
 #define BLOCK_BIT_USED			1
-#define BLOCK_BIT_BUDDY			2
-#define BLOCK_BIT_BUDDY_WAITING	4
+#define BLOCK_BIT_BUDDY_PREV	2
+#define BLOCK_BIT_BUDDY_POST	4
+#define BLOCK_BIT_UNM			8
 
 #define HEAD_TAIL_SIZE (sizeof(struct _block_head) + sizeof(struct _block_tail))
 
@@ -68,7 +69,7 @@ struct _chunk_head
 	unsigned long _reserved;
 };
 
-static long _return_free_node(struct _mmpool_impl* mmpi, struct _block_head* hd, long flh_idx);
+static long _return_free_node(struct _mmpool_impl* mmpi, struct _block_head* hd);
 static long _take_free_node(struct _mmpool_impl* mmpi, long flh_idx, struct _block_head** bh);
 static long  _mmp_init_block(struct _mmpool_impl* mmpi, void* blk, long head_idx);
 static long _mmp_load_chunk(struct _mmpool_impl* mmpi);
@@ -99,7 +100,7 @@ inline void* _block_head(void* payload_addr)
 	return (struct _block_head*)(payload_addr + sizeof(struct _block_head));
 }
 
-inline struct _block_tail* _block_tail(struct _block_head* bh)
+inline struct _block_tail* _get_tail(struct _block_head* bh)
 {
 	return (struct _block_tail*)(bh + bh->_block_size - sizeof(struct _block_tail));
 }
@@ -135,7 +136,7 @@ inline long _flh_idx(long payload_size)
 	long blk_size = _normalize_block_size(payload_size);
 	if(blk_size < MIN_BLOCK_SIZE || blk_size > MAX_BLOCK_SIZE) goto error_ret;
 
-	return log_2(blk_size) / MIN_BLOCK_SIZE;
+	return log_2(blk_size / MIN_BLOCK_SIZE);
 error_ret:
 	return -1;
 }
@@ -146,13 +147,54 @@ inline void _make_block_tail(struct _block_tail* tail, unsigned int block_size)
 	tail->_block_size = block_size;
 }
 
-static long _return_free_node(struct _mmpool_impl* mmpi, struct _block_head* hd, long flh_idx)
+inline struct _block_head* _make_block(void* addr, unsigned int block_size)
+{
+	struct _block_head* head = 0;
+	struct _block_tail* tail = 0;
+
+	if(!is_2power(block_size)) goto error_ret;
+
+	head = (struct _block_head*)addr;
+	head->_block_size = block_size;
+	head->_fln_idx = log_2(block_size) / MIN_BLOCK_SIZE;
+	head->_flag = 0;
+
+	tail = _get_tail(head);
+	_make_block_tail(tail, block_size);
+
+	return head;
+error_ret:
+	return 0;
+}
+
+inline struct _block_head* _make_unmblock(void* addr, unsigned int block_size)
+{
+	struct _block_head* head = 0;
+	struct _block_tail* tail = 0;
+
+	head = (struct _block_head*)addr;
+	head->_block_size = block_size;
+	head->_fln_idx = 0;
+	head->_flag = BLOCK_BIT_UNM;
+
+	tail = _get_tail(head);
+	_make_block_tail(tail, block_size);
+
+	return head;
+error_ret:
+	return 0;
+}
+
+static long _return_free_node(struct _mmpool_impl* mmpi, struct _block_head* hd)
 {
 	long fln_idx = 0;
+	long flh_idx = 0;
 
-	if(hd->_flag & BLOCK_BIT_USED) goto error_ret;
-	if(flh_idx >= FREE_LIST_COUNT) goto error_ret;
+	if(hd->_flag != 0) goto error_ret;
+	if(hd->_block_size > MAX_BLOCK_SIZE) goto error_ret;
 	if(mmpi->_max_used_fln_idx >= mmpi->_fln_count) goto error_ret;
+
+	flh_idx = log_2(hd->_block_size / MIN_BLOCK_SIZE);
 
 	fln_idx = mmpi->_next_aval_fln_idx;
 
@@ -202,51 +244,76 @@ error_ret:
 	return -1;
 }
 
-static void _try_spare_block(struct _mmpool_impl* mmpi, struct _block_head* bh, unsigned int payload_size)
+static long _try_spare_block(struct _mmpool_impl* mmpi, struct _block_head* bh, unsigned int payload_size)
 {
 	struct _block_head* h = 0;
 	struct _block_tail* t = 0;
+	unsigned int half_size = 0;
+	void* end = 0, *sp = 0, *mid = 0;
+
+	if(!is_2power(bh->_block_size)) goto error_ret;
 
 	payload_size = align8(payload_size);
 
-	void* end = (void*)bh + bh->_block_size;
-	void* sp = (void*)bh + HEAD_TAIL_SIZE + payload_size;
+	end = (void*)bh + bh->_block_size;
+	sp = (void*)bh + HEAD_TAIL_SIZE + payload_size;
 
+	// binary split the block into small piece of 2-power size if possible.
+
+	half_size = (bh->_block_size >> 1);
+	mid = (void*)bh + half_size;
+
+	while(mid > sp && half_size > MIN_BLOCK_SIZE)
+	{
+		h = _make_block(mid, half_size);
+		_return_free_node(mmpi, h);
+		
+		half_size >>= 1;
+		mid = (void*)bh + half_size;
+	}
+
+	end = (void*)bh + bh->_block_size;
+
+	// the last step.
+	//
 	unsigned long offset = align_to_2power_floor((unsigned long)end - (unsigned long)sp);
-	if(offset < MIN_BLOCK_SIZE) goto error_ret;
+	if(offset < MIN_BLOCK_SIZE) goto succ_ret;
 
+	// if can spare a small block of 2-power size, just do it.
+	//
 	sp = end - offset;
-	t = (struct _block_tail*)(sp - sizeof(struct _block_tail));
-	_make_block_tail(t, _block_size(payload_size));
 
-	h = (struct _block_head*)sp;
-	h->_block_size = offset;
-	h->_fln_idx = 0;
-	h->_flag = 0;
+	h = _make_block(sp, offset);
+	h->_flag |= BLOCK_BIT_BUDDY_POST;
+	_return_free_node(mmpi, h);
 
-	t = (struct _block_tail*)(end - sizeof(struct _block_tail));
-	_make_block_tail(t, offset);
+	// remain block is the block for the payload, with buddy flag, so bh->_blk_size remains the original size;
+	// bh is for the block head, and t is for the block tail.
+	//
+	_make_unmblock(bh, _block_size(payload_size));
+	bh->_flag |= BLOCK_BIT_BUDDY_PREV;
 
-	_return_free_node(mmpi, h, log_2(offset));
-	bh->_flag |= BLOCK_BIT_BUDDY;
-
+succ_ret:
+	return 0;
 error_ret:
-	return;
+	return -1;
 }
 
 static long  _mmp_init_block(struct _mmpool_impl* mmpi, void* blk, long head_idx)
 {
 	long rslt = 0;
 	struct _block_head* hd = (struct _block_head*)blk;
-	struct _block_tail* tl = _block_tail(blk);
+	struct _block_tail* tl = 0;
 
 	hd->_flag = 0;
 	hd->_fln_idx = 0;
 	hd->_block_size = _block_size_idx(head_idx);
 
+	tl = _get_tail(hd);
+
 	_make_block_tail(tl, hd->_block_size);
 
-	rslt = _return_free_node(mmpi, hd, head_idx);
+	rslt = _return_free_node(mmpi, hd);
 	if(rslt < 0) goto error_ret;
 
 	return 0;
@@ -296,7 +363,6 @@ static long _mmp_load_chunk(struct _mmpool_impl* mmpi)
 	long blk_size = 0;
 	long payload_size = 0;
 	long rslt = 0;
-	long flh_idx = 0;
 	struct _block_head* bhd = 0;
 
 	struct _chunk_head* chd = (struct _chunk_head*)(mmpi->_pool.mm_addr);
@@ -311,10 +377,7 @@ static long _mmp_load_chunk(struct _mmpool_impl* mmpi)
 
 		payload_size = _payload_size(bhd->_block_size);
 
-		flh_idx = _flh_idx(payload_size);
-		if(flh_idx < 0) goto error_ret;
-
-		rslt = _return_free_node(mmpi, bhd, flh_idx);
+		rslt = _return_free_node(mmpi, bhd);
 		if(rslt < 0) goto error_ret;
 	}
 
@@ -411,7 +474,8 @@ void* mmp_alloc(struct mmpool* mmp, long payload_size)
 	rslt = _take_free_node(mmpi, flh_idx, &bh);
 	if(rslt < 0) goto error_ret;
 
-	_try_spare_block(mmpi, bh, payload_size);
+	rslt = _try_spare_block(mmpi, bh, payload_size);
+	if(rslt < 0) goto error_ret;
 
 	bh->_flag |= BLOCK_BIT_USED;
 
@@ -420,14 +484,28 @@ error_ret:
 	return 0;
 }
 
-void mmp_free(struct mmpool* mmp, void* p)
+int mmp_free(struct mmpool* mmp, void* p)
 {
 	struct _mmpool_impl* mmpi = (struct _mmpool_impl*)mmp;
+	struct _block_head* bh = (struct _block_head*)p;
+	
+	if((bh->_flag & BLOCK_BIT_USED) == 0) goto error_ret;
+	bh->_flag ^= BLOCK_BIT_USED;
+
+	if(bh->_flag & BLOCK_BIT_UNM)
+	{
+		if((bh->_flag & BLOCK_BIT_BUDDY_PREV) == 0) goto error_ret;
+
+		// wait for buddy.
+		goto succ_ret;
+	}
 
 
-	return;
+
+succ_ret:
+	return 0;
 error_ret:
-	return;
+	return -1;
 }
 
 
