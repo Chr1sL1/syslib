@@ -1,37 +1,36 @@
-#include <stdio.h>
 #include "dlist.h"
 
-int lst_new(struct dlist* lst)
+long lst_new(struct dlist* lst)
 {
 	if(!lst) goto error_ret; 
 
-	lst->head.prev = NULL;
+	lst->head.prev = 0;
 	lst->head.next = &lst->tail;
 
 	lst->tail.prev = &lst->head;
-	lst->tail.next = NULL;
+	lst->tail.next = 0;
 
 	lst->size = 0;
 
-	return 1;
-error_ret:
 	return 0;
+error_ret:
+	return -1;
 }
 
-int lst_clr(struct dlnode* node)
+long lst_clr(struct dlnode* node)
 {
 	if(!node) goto error_ret;
 
-	node->prev = NULL;
-	node->next = NULL;
+	node->prev = 0;
+	node->next = 0;
 
-	return 1;
-error_ret:
 	return 0;
+error_ret:
+	return -1;
 }
 
 
-int lst_insert_before(struct dlist* lst, struct dlnode* suc, struct dlnode* node)
+long lst_insert_before(struct dlist* lst, struct dlnode* suc, struct dlnode* node)
 {
 	if(!lst || !suc || !node) goto error_ret;
 	if(suc == &lst->head) goto error_ret;
@@ -44,15 +43,12 @@ int lst_insert_before(struct dlist* lst, struct dlnode* suc, struct dlnode* node
 
 	++lst->size;
 
-	printf("head: %p, tail: %p.", &lst->head, &lst->tail);
-	printf("node: %p, prev: %p, next: %p.\n", node, node->prev, node->next);
-
-	return 1;
-error_ret:
 	return 0;
+error_ret:
+	return -1;
 }
 
-int lst_insert_after(struct dlist* lst, struct dlnode* prv, struct dlnode* node)
+long lst_insert_after(struct dlist* lst, struct dlnode* prv, struct dlnode* node)
 {
 	if(!lst || !prv || !node) goto error_ret;
 	if(prv == &lst->tail) goto error_ret;
@@ -65,12 +61,12 @@ int lst_insert_after(struct dlist* lst, struct dlnode* prv, struct dlnode* node)
 
 	++lst->size;
 
-	return 1;
-error_ret:
 	return 0;
+error_ret:
+	return -1;
 }
 
-int lst_remove(struct dlist* lst, struct dlnode* node)
+long lst_remove(struct dlist* lst, struct dlnode* node)
 {
 	if(!lst || !node) goto error_ret;
 	if(lst->tail.prev == &lst->head || lst->head.next == &lst->tail) goto error_ret;
@@ -79,28 +75,28 @@ int lst_remove(struct dlist* lst, struct dlnode* node)
 	node->prev->next = node->next;
 	node->next->prev = node->prev;
 
-	node->prev = NULL;
-	node->next = NULL;
+	node->prev = 0;
+	node->next = 0;
 	
 	--lst->size;
 
-	return 1;
-error_ret:
 	return 0;
+error_ret:
+	return -1;
 }
 
-int lst_push_back(struct dlist* lst, struct dlnode* node)
+long lst_push_back(struct dlist* lst, struct dlnode* node)
 {
 	return lst_insert_before(lst, &lst->tail, node);
 error_ret:
-	return 0;
+	return -1;
 }
 
-int lst_push_front(struct dlist* lst, struct dlnode* node)
+long lst_push_front(struct dlist* lst, struct dlnode* node)
 {
 	return lst_insert_after(lst, &lst->head, node);
 error_ret:
-	return 0;
+	return -1;
 }
 
 struct dlnode* lst_pop_back(struct dlist* lst)
@@ -111,7 +107,7 @@ struct dlnode* lst_pop_back(struct dlist* lst)
 	if(!lst_remove(lst, node)) goto error_ret;
 	return node;
 error_ret:
-	return NULL;
+	return 0;
 }
 
 struct dlnode* lst_pop_front(struct dlist* lst)
@@ -122,7 +118,24 @@ struct dlnode* lst_pop_front(struct dlist* lst)
 	if(!lst_remove(lst, node)) goto error_ret;
 	return node;
 error_ret:
-	return NULL;
+	return 0;
+}
+
+struct dlnode* lst_first(struct dlist* lst)
+{
+	if(!lst || lst->size <= 0) goto error_ret;
+	return lst->head.next;
+error_ret:
+	return 0;
+}
+
+struct dlnode* lst_last(struct dlist* lst)
+{
+	if(!lst || lst->size <= 0) goto error_ret;
+	return lst->tail.prev;
+error_ret:
+	return 0;
+
 }
 
 
