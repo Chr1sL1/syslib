@@ -1,7 +1,7 @@
 #include "misc.h"
 
 
-unsigned int align_to_2power_top(unsigned int val)
+unsigned int _align_to_2power_top(unsigned int val)
 {
 	__asm__("bsrl	%edi, %ecx\n"\
 			"bsfl	%edi, %edx\n"\
@@ -12,13 +12,26 @@ unsigned int align_to_2power_top(unsigned int val)
 			"sall	%cl, %eax\n");
 }
 
-unsigned int align_to_2power_floor(unsigned int val)
+unsigned int align_to_2power_top(unsigned int val)
+{
+	if(val == 0) return 0;
+	return _align_to_2power_top(val);
+}
+
+unsigned int _align_to_2power_floor(unsigned int val)
 {
 	__asm__("bsrl	%edi, %ecx\n"\
 			"leal	0x1(%ecx), %esi\n"\
 			"movl	$1, %eax\n"\
 			"sall	%cl, %eax\n");
 }
+
+unsigned int align_to_2power_floor(unsigned int val)
+{
+	if(val == 0) return 0;
+	return _align_to_2power_floor(val);
+}
+
 
 int is_2power(unsigned int val)
 {

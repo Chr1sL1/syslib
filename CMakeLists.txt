@@ -7,10 +7,9 @@ include_directories(inc)
 aux_source_directory(test src_list)
 add_subdirectory(src)
 
+set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g -std=gnu11 -Wint-to-pointer-cast -Wpointer-to-int-cast")
+
 add_compile_options(-g)
-add_compile_options(-O3)
-add_compile_options(-Wint-to-pointer-cast)
-add_compile_options(-Wpointer-to-int-cast)
 
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -finline-functions")
 

@@ -32,4 +32,6 @@ struct dlnode* lst_pop_front(struct dlist* lst);
 struct dlnode* lst_first(struct dlist* lst);
 struct dlnode* lst_last(struct dlist* lst);
 
+long lst_check(struct dlist* lst);
+
 #endif

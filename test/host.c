@@ -10,10 +10,13 @@
 #include "common.h"
 #include "utask.h"
 #include "misc.h"
+#include "mmpool.h"
 
 const char* share_memory_name = "test_shm_17x";
 
 int test_arr[100];
+
+char* mmp_buf;
 
 void swap(int* a, int* b)
 {
@@ -222,6 +225,41 @@ error_ret:
 	return;
 }
 
+long test_mmpool(void)
+{
+	long rslt = 0;
+	unsigned long r1 = 0, r2 = 0;
+	unsigned int size = 100 * 1024 * 1024 + 16;
+	long rnd = 0;
+
+	mmp_buf = malloc(size);
+
+	struct mmpool* pool = mmp_new(mmp_buf, size);
+
+	if(!pool) goto error_ret;
+
+	for(long i = 0; i < 100; i++)
+	{
+		rnd = random() % 65535;
+		rslt = mmp_check(pool);
+
+		if(rslt < 0)
+			goto error_ret;
+
+		void* p = mmp_alloc(pool, rnd);
+		if(!p) printf("alloc errrrrrrrrrrrrrrrrror.\n");
+
+		mmp_free(pool, p);
+	}
+
+	rslt = mmp_check(pool);
+
+	mmp_del(pool);
+
+error_ret:
+	return -1;
+}
+
 unsigned int at2f(unsigned v)
 {
 	int i = 32;
@@ -254,22 +292,26 @@ unsigned int at2t(unsigned v)
 
 int main(void)
 {
+	unsigned long i = align_to_2power_floor(134);
 
-	unsigned long r1 = rdtsc();
-	unsigned int aaa = align_to_2power_top(11);
-	unsigned long r2 = rdtsc();
-	printf("aaa = %u\n", aaa);
-	printf("cycle = %lu\n", r2 - r1);
+	srandom(25234978);
+	test_mmpool();
 
-	r1 = rdtsc();
-	aaa = at2t(11);
-	r2 = rdtsc();
-	printf("aaa = %u\n", aaa);
-	printf("cycle = %lu\n", r2 - r1);
-
-
-	test_rbtree(); 
-	test_task();
+//	unsigned long r1 = rdtsc();
+//	unsigned int aaa = align_to_2power_top(11);
+//	unsigned long r2 = rdtsc();
+//	printf("aaa = %u\n", aaa);
+//	printf("cycle = %lu\n", r2 - r1);
+//
+//	r1 = rdtsc();
+//	aaa = at2t(11);
+//	r2 = rdtsc();
+//	printf("aaa = %u\n", aaa);
+//	printf("cycle = %lu\n", r2 - r1);
+//
+//
+//	test_rbtree(); 
+//	test_task();
 //	test_lst();
 
 	return 0;

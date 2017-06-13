@@ -71,6 +71,7 @@ long lst_remove(struct dlist* lst, struct dlnode* node)
 	if(!lst || !node) goto error_ret;
 	if(lst->tail.prev == &lst->head || lst->head.next == &lst->tail) goto error_ret;
 	if(node == &lst->head || node == &lst->tail) goto error_ret;
+	if(lst->size <= 0) goto error_ret;
 
 	node->prev->next = node->next;
 	node->next->prev = node->prev;
@@ -104,7 +105,7 @@ struct dlnode* lst_pop_back(struct dlist* lst)
 	if(!lst) goto error_ret;
 
 	struct dlnode* node = lst->tail.prev;
-	if(!lst_remove(lst, node)) goto error_ret;
+	if(lst_remove(lst, node) < 0) goto error_ret;
 	return node;
 error_ret:
 	return 0;
@@ -115,7 +116,7 @@ struct dlnode* lst_pop_front(struct dlist* lst)
 	if(!lst) goto error_ret;
 
 	struct dlnode* node = lst->head.next;
-	if(!lst_remove(lst, node)) goto error_ret;
+	if(lst_remove(lst, node) < 0) goto error_ret;
 	return node;
 error_ret:
 	return 0;
@@ -136,6 +137,26 @@ struct dlnode* lst_last(struct dlist* lst)
 error_ret:
 	return 0;
 
+}
+
+long lst_check(struct dlist* lst)
+{
+	struct dlnode* node = lst->head.next;
+
+	while(node != &lst->tail)
+	{
+		struct dlnode* suc = node->next;
+
+		if(suc->prev != node)
+			goto error_ret;
+
+
+		node = suc;
+	}
+
+	return 0;
+error_ret:
+	return -1;
 }
 
 
