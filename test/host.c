@@ -228,9 +228,9 @@ error_ret:
 long test_mmpool(void)
 {
 	long rslt = 0;
-	unsigned long r1 = 0, r2 = 0;
 	unsigned int size = 100 * 1024 * 1024 + 16;
 	long rnd = 0;
+	unsigned long r1 = 0, r2 = 0;
 
 	mmp_buf = malloc(size);
 
@@ -241,15 +241,23 @@ long test_mmpool(void)
 	for(long i = 0; i < 100; i++)
 	{
 		rnd = random() % 65535;
-		rslt = mmp_check(pool);
 
-		if(rslt < 0)
-			goto error_ret;
-
+		r1 = rdtsc();
 		void* p = mmp_alloc(pool, rnd);
+		r2 = rdtsc();
+
+		printf("alloc cycles: %lu\n", r2 - r1);
+
 		if(!p) printf("alloc errrrrrrrrrrrrrrrrror.\n");
 
+		r1 = rdtsc();
 		mmp_free(pool, p);
+		r2 = rdtsc();
+		printf("free cycles: %lu\n", r2 - r1);
+
+		rslt = mmp_check(pool);
+		if(rslt < 0)
+			goto error_ret;
 	}
 
 	rslt = mmp_check(pool);
@@ -292,7 +300,7 @@ unsigned int at2t(unsigned v)
 
 int main(void)
 {
-	unsigned long i = align_to_2power_floor(134);
+	unsigned long i = log_2(1024);
 
 	srandom(25234978);
 	test_mmpool();

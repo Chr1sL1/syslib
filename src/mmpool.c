@@ -106,9 +106,9 @@ static inline long _block_size_idx(long free_list_idx)
 	return MIN_BLOCK_SIZE * (1 << free_list_idx);
 }
 
-static inline struct _free_list_head* _get_free_list_head(struct _mmpool_impl* mmpi, struct _block_head* bh)
+static inline struct _free_list_head* _get_flh(struct _mmpool_impl* mmpi, struct _block_head* bh)
 {
-	long idx = log_2(bh->_block_size) / MIN_BLOCK_SIZE;
+	long idx = log_2(bh->_block_size / MIN_BLOCK_SIZE);
 
 	if(idx >= FREE_LIST_COUNT) goto error_ret;
 
@@ -130,6 +130,7 @@ error_ret:
 
 static inline void _return_free_fln(struct _mmpool_impl* mmpi, struct _free_list_node* fln)
 {
+	lst_clr(&fln->_free_fln_node);
 	lst_push_front(&mmpi->_free_fln_list, &fln->_free_fln_node);
 }
 
@@ -235,6 +236,7 @@ static long _return_free_node_to_head(struct _mmpool_impl* mmpi, struct _block_h
 
 	fln->_block = hd;
 	hd->_fln_idx = fln->_idx;
+	lst_clr(&fln->_list_node);
 	rslt = lst_push_front(&mmpi->_flh[flh_idx]._free_list, &fln->_list_node);
 
 	if(rslt < 0) goto error_ret;
@@ -261,7 +263,7 @@ static long _return_free_node_to_tail(struct _mmpool_impl* mmpi, struct _block_h
 	if(!fln) goto error_ret;
 
 	fln->_block = hd;
-	hd->_fln_idx = fln->_idx;
+	hd->_fln_idx = 0;
 	rslt = lst_push_back(&mmpi->_flh[flh_idx]._free_list, &fln->_list_node);
 
 	if(rslt < 0) goto error_ret;
@@ -276,16 +278,15 @@ error_ret:
 static long _take_free_node(struct _mmpool_impl* mmpi, long flh_idx, struct _block_head** rbh)
 {
 	struct _free_list_node* fln = 0;
+	long idx = flh_idx;
 
 	*rbh = 0;
 
-	while(!fln)
+	do
 	{
-		if(flh_idx >= FREE_LIST_COUNT) goto error_ret;
-
-		fln = (struct _free_list_node*)lst_pop_front(&mmpi->_flh[flh_idx]._free_list);
-		++flh_idx;
+		fln = (struct _free_list_node*)lst_pop_front(&mmpi->_flh[idx++]._free_list);
 	}
+	while(!fln && idx < FREE_LIST_COUNT);
 
 	if(!fln) goto error_ret;
 
@@ -301,48 +302,31 @@ error_ret:
 
 static long _try_spare_block(struct _mmpool_impl* mmpi, struct _block_head* bh, unsigned int payload_size)
 {
-	struct _block_head* h = 0;
-	struct _block_tail* t = 0;
-	unsigned int half_size = 0;
+	struct _block_head* h;
 	long offset;
-	void* end = 0, *sp = 0, *mid = 0, *tmp = 0;
+	void* end;
 
-	if(!is_2power(bh->_block_size)) goto error_ret;
+	if(bh->_flag != 0) goto error_ret;
+	else if(!is_2power(bh->_block_size)) goto error_ret;
 
 	payload_size = align8(payload_size);
 
 	if(payload_size <= MIN_PAYLOAD_SIZE) goto succ_ret;
 
 	end = (void*)bh + bh->_block_size;
-	sp = (void*)bh + HEAD_TAIL_SIZE + payload_size;
-	offset= bh->_block_size;
 
-	if(sp >= end) goto error_ret;
-
-	// binary split the block into small piece of 2-power size if possible.
-	//
-
-	while(end > sp && offset > MIN_BLOCK_SIZE)
+	offset = align_to_2power_floor(bh->_block_size - HEAD_TAIL_SIZE - payload_size);
+	if(offset >= MIN_BLOCK_SIZE)
 	{
-		offset = align_to_2power_floor((long)end - (long)sp);
-
-		if(offset < MIN_BLOCK_SIZE)
-			break;
-
 		h = _make_block(end - offset, offset);
+		h->_flag |= BLOCK_BIT_UNM_SUC;
 		_return_free_node_to_head(mmpi, h);
-
-		end = h;
 	}
-
-	sp = end;
 
 	// remain block is the block for the payload, with buddy flag, so bh->_blk_size remains the original size;
 	// bh is for the block head, and t is for the block tail.
 	//
-	bh = _make_unmblock(bh, (long)sp - (long)bh);
-	bh = _next_block(bh);
-	bh->_flag |= BLOCK_BIT_UNM_SUC;
+	bh = _make_unmblock(bh, bh->_block_size - offset);
 
 succ_ret:
 	return 0;
@@ -353,7 +337,7 @@ error_ret:
 static inline void _unlink_block(struct _mmpool_impl* mmpi, struct _block_head* bh)
 {
 	struct _free_list_node* fln = &mmpi->_fln_pool[bh->_fln_idx];
-	struct _free_list_head* flh = _get_free_list_head(mmpi, bh);
+	struct _free_list_head* flh = _get_flh(mmpi, bh);
 	lst_remove(&flh->_free_list, &fln->_list_node);
 
 	_return_free_fln(mmpi, fln);
@@ -391,64 +375,33 @@ error_ret:
 	return -1;
 }
 
-static long _try_merge_neighbor_unmblock(struct _mmpool_impl* mmpi, struct _block_head* bh)
-{
-	long rslt = 0;
-
-	if(bh->_flag & BLOCK_BIT_USED) goto error_ret;
-
-	if(bh->_flag & BLOCK_BIT_UNM)
-	{
-		struct _block_head* nbh = _next_block(bh);
-		if(!nbh) goto error_ret;
-		if(nbh->_flag & BLOCK_BIT_UNM_SUC == 0) goto error_ret;
-
-		rslt = _merge_free_blocks(mmpi, bh, 1);
-		if(rslt < 0) goto error_ret;
-
-		bh->_flag ^= BLOCK_BIT_UNM; 
-		nbh->_flag ^= BLOCK_BIT_UNM_SUC;
-
-	}
-	else if(bh->_flag & BLOCK_BIT_UNM_SUC)
-	{
-		struct _block_head* pbh = _prev_block(bh);
-		if(!pbh) goto error_ret;
-		if(pbh->_flag & BLOCK_BIT_UNM == 0) goto error_ret;
-
-		rslt = _merge_free_blocks(mmpi, pbh, 1);
-		if(rslt < 0) goto error_ret;
-
-		pbh->_flag ^= BLOCK_BIT_UNM; 
-		bh->_flag ^= BLOCK_BIT_UNM_SUC;
-	}
-
-	return rslt;
-error_ret:
-	return -1;
-}
-
 static struct _block_head* _merge_unmblock(struct _mmpool_impl* mmpi, struct _block_head* bh)
 {
 	long block_size;
 	struct _block_head* nbh;
 
-	if((bh->_flag & BLOCK_BIT_UNM) == 0) goto error_ret;
-	if((bh->_flag & BLOCK_BIT_USED) != 0) goto error_ret;
+	if((bh->_flag & BLOCK_BIT_UNM) == 0)
+		goto error_ret;
+	if((bh->_flag & BLOCK_BIT_USED) != 0)
+		goto error_ret;
 
 	nbh = _next_block(bh);
-	if((nbh->_flag & BLOCK_BIT_UNM_SUC) == 0) goto error_ret;
-	if((nbh->_flag & BLOCK_BIT_USED) != 0) goto error_ret;
+	if((nbh->_flag & BLOCK_BIT_UNM_SUC) == 0)
+		goto error_ret;
+	if((nbh->_flag & BLOCK_BIT_USED) != 0)
+		goto error_ret;
 
 	_unlink_block(mmpi, nbh);
 
 	block_size = bh->_block_size + nbh->_block_size;
-	if(!is_2power(block_size)) goto error_ret;
+	if(!is_2power(block_size))
+		goto error_ret;
 
 	bh = _make_block(bh, block_size);
 
 	return bh;
 error_ret:
+	printf("merge unmblock failed.\n");
 	return 0;
 }
 
@@ -554,7 +507,7 @@ struct mmpool* mmp_new(void* addr, long size)
 
 	for(long i = 0; i < mmpi->_fln_count; ++i)
 	{
-		lst_clr(&mmpi->_fln_pool[i]._list_node);
+		lst_clr(&mmpi->_fln_pool[i]._free_fln_node);
 		mmpi->_fln_pool[i]._block = 0;
 		mmpi->_fln_pool[i]._idx = i;
 		lst_push_back(&mmpi->_free_fln_list, &mmpi->_fln_pool[i]._free_fln_node);
@@ -674,15 +627,15 @@ long mmp_check(struct mmpool* mmp)
 	struct _block_head* h = 0;
 	struct _mmpool_impl* mmpi = (struct _mmpool_impl*)mmp;
 
-//	h = (struct _block_head*)(mmpi->_pool.mm_addr + sizeof(struct _chunk_head));
-//
-//	while((void*)h < (void*)mmpi->_pool.mm_addr + mmpi->_pool.mm_size)
-//	{
-//		if(h->_flag != 0)
-//			printf("flag: %d, block size: %d.\n", h->_flag, h->_block_size);
-//
-//		h = _next_block(h);
-//	}
+	h = (struct _block_head*)(mmpi->_pool.mm_addr + sizeof(struct _chunk_head));
+
+	while((void*)h < (void*)mmpi->_pool.mm_addr + mmpi->_pool.mm_size)
+	{
+		if(h->_flag != 0)
+			printf("flag: %d, block size: %d.\n", h->_flag, h->_block_size);
+
+		h = _next_block(h);
+	}
 
 //	for(long i = 0; i < FREE_LIST_COUNT; ++i)
 //	{
