@@ -300,7 +300,8 @@ unsigned int at2t(unsigned v)
 
 int main(void)
 {
-	unsigned long i = log_2(1024);
+	unsigned long i = align_to_2power_floor(0);
+	printf("%lu\n", i);
 
 	srandom(25234978);
 	test_mmpool();
