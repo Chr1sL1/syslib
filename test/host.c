@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <stdlib.h>
+#include <time.h>
 #include <sys/time.h>
 
 #include "shmem.h"
@@ -228,9 +229,14 @@ error_ret:
 long test_mmpool(void)
 {
 	long rslt = 0;
-	unsigned int size = 100 * 1024 * 1024 + 16;
+	unsigned int size = 100 * 1024 * 1024;
 	long rnd = 0;
 	unsigned long r1 = 0, r2 = 0;
+
+	unsigned long tmp = 0;
+	unsigned long alloc_sum = 0, free_sum = 0;
+	unsigned long alloc_max = 0, free_max = 0;
+	unsigned long count = 1000;
 
 	mmp_buf = malloc(size);
 
@@ -238,34 +244,50 @@ long test_mmpool(void)
 
 	if(!pool) goto error_ret;
 
-	for(long i = 0; i < 100; i++)
+	for(long i = 0; i < count; i++)
 	{
-		rnd = random() % 65535;
+		rnd = random() % 1024;
+
+		if(rnd <= 0)
+			continue;
 
 		r1 = rdtsc();
 		void* p = mmp_alloc(pool, rnd);
 		r2 = rdtsc();
 
-		printf("alloc cycles: %lu\n", r2 - r1);
+		tmp = r2 - r1;
+		alloc_sum += tmp;
+		if(tmp > alloc_max)
+			alloc_max = tmp;
+
 
 		if(!p) printf("alloc errrrrrrrrrrrrrrrrror.\n");
 
 		r1 = rdtsc();
 		mmp_free(pool, p);
 		r2 = rdtsc();
-		printf("free cycles: %lu\n", r2 - r1);
 
-		rslt = mmp_check(pool);
-		if(rslt < 0)
-			goto error_ret;
+		tmp = r2 - r1;
+		free_sum += tmp;
+		if(tmp > free_max)
+			free_max = tmp;
 	}
 
 	rslt = mmp_check(pool);
 
+	printf("[avg] alloc cycle: %lu, free cycle: %lu.\n", alloc_sum / count, free_sum / count);
+	printf("[max] alloc cycle: %lu, free cycle: %lu.\n", alloc_max, free_max);
+
 	mmp_del(pool);
 
+	return 0;
 error_ret:
 	return -1;
+}
+
+void test_mmpool_ex(void)
+{
+
 }
 
 unsigned int at2f(unsigned v)
@@ -298,12 +320,32 @@ unsigned int at2t(unsigned v)
 	return (1 << (k + 1));
 }
 
+unsigned long test_asm(unsigned long val)
+{
+	unsigned long k = 100;
+
+	__asm__("addq %1, %0\n\t" : "+r"(k) : ""(val));
+
+	return k;
+}
+
+unsigned long test_asm_align8(unsigned long val)
+{
+	unsigned long ret;
+	__asm__("addq $8, %1\n\t"
+			"andq $-8, %1\n\t"
+			"movq %1, %0\n\t"
+			: "=r"(ret), "+r"(val));
+
+	return ret;
+}
+
 int main(void)
 {
-	unsigned long i = align_to_2power_floor(0);
+	unsigned long i = test_asm_align8(10);
 	printf("%lu\n", i);
 
-	srandom(25234978);
+	srandom(time(0));
 	test_mmpool();
 
 //	unsigned long r1 = rdtsc();

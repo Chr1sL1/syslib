@@ -275,6 +275,7 @@ error_ret:
 	return -1;
 }
 
+// similar to the page-fault process
 static long _take_free_node(struct _mmpool_impl* mmpi, long flh_idx, struct _block_head** rbh)
 {
 	struct _free_list_node* fln = 0;
@@ -282,19 +283,42 @@ static long _take_free_node(struct _mmpool_impl* mmpi, long flh_idx, struct _blo
 
 	*rbh = 0;
 
-	do
+	while(idx < FREE_LIST_COUNT && mmpi->_flh[idx]._free_list.size <= 0)
 	{
-		fln = (struct _free_list_node*)lst_pop_front(&mmpi->_flh[idx++]._free_list);
+		++idx;
 	}
-	while(!fln && idx < FREE_LIST_COUNT);
+
+	if(idx < FREE_LIST_COUNT)
+		fln = (struct _free_list_node*)lst_pop_front(&mmpi->_flh[idx]._free_list);
 
 	if(!fln) goto error_ret;
+
+	if(idx > flh_idx)
+	{
+		struct _block_head* bh = fln->_block;
+		struct _block_head* h;
+		long new_size = bh->_block_size;
+
+		for(long i = 0; i < idx - flh_idx; ++i)
+		{
+			new_size >>= 1;
+			h = (void*)bh + new_size;
+			h = _make_block(h, new_size);
+			_return_free_node_to_head(mmpi, h);
+		}
+
+		bh = _make_block(bh, new_size);
+		_return_free_node_to_head(mmpi, bh);
+
+		goto succ_ret;
+	}
 
 	*rbh = fln->_block;
 	(*rbh)->_fln_idx = 0;
 
 	_return_free_fln(mmpi, fln);
 
+succ_ret:
 	return 0;
 error_ret:
 	return -1;
@@ -314,19 +338,23 @@ static long _try_spare_block(struct _mmpool_impl* mmpi, struct _block_head* bh, 
 	if(payload_size <= MIN_PAYLOAD_SIZE) goto succ_ret;
 
 	end = (void*)bh + bh->_block_size;
+	offset = (long)bh->_block_size - HEAD_TAIL_SIZE - payload_size;
 
-	offset = align_to_2power_floor(bh->_block_size - HEAD_TAIL_SIZE - payload_size);
+	if(offset > 0)
+		offset = align_to_2power_floor(offset);
+
 	if(offset >= MIN_BLOCK_SIZE)
 	{
 		h = _make_block(end - offset, offset);
 		h->_flag |= BLOCK_BIT_UNM_SUC;
 		_return_free_node_to_head(mmpi, h);
+
+		bh = _make_unmblock(bh, bh->_block_size - offset);
 	}
 
 	// remain block is the block for the payload, with buddy flag, so bh->_blk_size remains the original size;
 	// bh is for the block head, and t is for the block tail.
 	//
-	bh = _make_unmblock(bh, bh->_block_size - offset);
 
 succ_ret:
 	return 0;
@@ -359,7 +387,7 @@ static long _merge_free_blocks(struct _mmpool_impl* mmpi, struct _block_head* bh
 	while(count < max_count && block_size < MAX_BLOCK_SIZE)
 	{
 		struct _block_head* nbh = _next_block(bh);
-		if(nbh->_flag & BLOCK_BIT_USED != 0) break;
+		if(nbh->_flag != 0) break;
 
 		_unlink_block(mmpi, nbh);
 		block_size += nbh->_block_size;
@@ -398,6 +426,40 @@ static struct _block_head* _merge_unmblock(struct _mmpool_impl* mmpi, struct _bl
 		goto error_ret;
 
 	bh = _make_block(bh, block_size);
+
+	return bh;
+error_ret:
+	printf("merge unmblock failed.\n");
+	return 0;
+}
+
+static struct _block_head* _merge_to_unmblock(struct _mmpool_impl* mmpi, struct _block_head* bh)
+{
+	long block_size;
+	long unm_used = 0;
+	struct _block_head* nbh;
+
+	if((bh->_flag & BLOCK_BIT_UNM) == 0)
+		goto error_ret;
+
+	if(bh->_flag & BLOCK_BIT_USED)
+		unm_used = 1;
+
+	nbh = _next_block(bh);
+	if((nbh->_flag & BLOCK_BIT_UNM_SUC) == 0)
+		goto error_ret;
+	if((nbh->_flag & BLOCK_BIT_USED) != 0)
+		goto error_ret;
+
+	_unlink_block(mmpi, nbh);
+
+	block_size = bh->_block_size + nbh->_block_size;
+	if(!is_2power(block_size))
+		goto error_ret;
+
+	bh = _make_block(bh, block_size);
+	if(unm_used)
+		bh->_flag |= BLOCK_BIT_USED;
 
 	return bh;
 error_ret:
@@ -520,7 +582,8 @@ struct mmpool* mmp_new(void* addr, long size)
 	}
 
 	mmpi->_pool.mm_addr = addr;
-	mmpi->_pool.mm_size = size;
+	mmpi->_pool.mm_size = size / MAX_BLOCK_SIZE * MAX_BLOCK_SIZE
+		+ sizeof(struct _chunk_head);
 
 	ch = (struct _chunk_head*)addr;
 	if(ch->_chunck_label == CHUNK_LABEL)
@@ -565,12 +628,17 @@ void* mmp_alloc(struct mmpool* mmp, long payload_size)
 	struct _mmpool_impl* mmpi = (struct _mmpool_impl*)mmp;
 	struct _block_head* bh = 0;
 
-	if(payload_size > 0xFFFFFFFF) goto error_ret;
-	if(payload_size > MAX_PAYLOAD_SIZE) goto error_ret;
+	if(payload_size <= 0 || payload_size > MAX_PAYLOAD_SIZE) goto error_ret;
 
 	flh_idx = _flh_idx(payload_size);
-	rslt = _take_free_node(mmpi, flh_idx, &bh);
-	if(rslt < 0) goto error_ret;
+	if(flh_idx < 0) goto error_ret;
+
+	do
+	{
+		rslt = _take_free_node(mmpi, flh_idx, &bh);
+		if(rslt < 0) goto error_ret;
+	}
+	while(bh == 0);
 
 	rslt = _try_spare_block(mmpi, bh, payload_size);
 	if(rslt < 0) goto error_ret;
@@ -608,11 +676,12 @@ long mmp_free(struct mmpool* mmp, void* p)
 	}
 	else if(bh->_flag & BLOCK_BIT_UNM_SUC)
 	{
-		bh = _merge_unmblock(mmpi, _prev_block(bh));
+		bh = _merge_to_unmblock(mmpi, _prev_block(bh));
 		if(!bh) goto succ_ret;
 	}
 
-	rslt = _return_free_node_to_head(mmpi, bh);
+	if(bh->_flag == 0)
+		rslt = _return_free_node_to_head(mmpi, bh);
 
 	return rslt;
 succ_ret:
@@ -634,6 +703,8 @@ long mmp_check(struct mmpool* mmp)
 		if(h->_flag != 0)
 			printf("flag: %d, block size: %d.\n", h->_flag, h->_block_size);
 
+		printf("block size: %u, idx: %d.\n", h->_block_size, h->_fln_idx);
+
 		h = _next_block(h);
 	}
 
@@ -647,6 +718,8 @@ long mmp_check(struct mmpool* mmp)
 	for(long i = 0; i < FREE_LIST_COUNT; ++i)
 	{
 		lst_check(&mmpi->_flh[i]._free_list);
+		printf("list[%ld]: node count[%ld], op_count[%ld].\n", i,
+				mmpi->_flh[i]._free_list.size, mmpi->_flh[i]._op_count);
 	}
 
 	lst_check(&mmpi->_free_fln_list);
