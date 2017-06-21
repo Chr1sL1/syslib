@@ -239,8 +239,11 @@ long test_mmpool(void)
 	unsigned long count = 1000;
 
 	mmp_buf = malloc(size);
+	struct mmpool_config cfg;
+	cfg.min_block_index = 5;
+	cfg.max_block_index = 21;
 
-	struct mmpool* pool = mmp_new(mmp_buf, size);
+	struct mmpool* pool = mmp_new(mmp_buf, size, &cfg);
 
 	if(!pool) goto error_ret;
 
