@@ -1,3 +1,4 @@
+cmake_minimum_required(VERSION 3.5)
 project(test)
 
 #enable_language(C ASM)
@@ -14,7 +15,7 @@ add_compile_options(-g)
 
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -finline-functions")
 
-add_executable(test ${src_list})
-target_link_libraries(test syslib)
-target_link_libraries(test rt)
+add_executable(testt ${src_list})
+target_link_libraries(testt syslib)
+target_link_libraries(testt rt)
 

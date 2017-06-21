@@ -584,8 +584,8 @@ struct mmpool* mmp_new(void* addr, long size, struct mmpool_config* cfg)
 	mmpi->_cfg._min_block_idx = cfg->min_block_index;
 	mmpi->_cfg._max_block_idx = cfg->max_block_index;
 	mmpi->_cfg._free_list_count = cfg->max_block_index - cfg->min_block_index + 1;
-	mmpi->_cfg._min_payload_size = cfg->min_block_index + HEAD_TAIL_SIZE;
-	mmpi->_cfg._max_payload_size = cfg->max_block_index + HEAD_TAIL_SIZE;
+	mmpi->_cfg._min_payload_size = (1 << cfg->min_block_index) - HEAD_TAIL_SIZE;
+	mmpi->_cfg._max_payload_size = (1 << cfg->max_block_index) - HEAD_TAIL_SIZE;
 
 	mmpi->_fln_count = size / _block_size(cfg->min_block_index);
 	mmpi->_fln_pool = malloc(mmpi->_fln_count * sizeof(struct _free_list_node));

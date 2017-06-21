@@ -241,7 +241,7 @@ long test_mmpool(void)
 	mmp_buf = malloc(size);
 	struct mmpool_config cfg;
 	cfg.min_block_index = 5;
-	cfg.max_block_index = 21;
+	cfg.max_block_index = 16;
 
 	struct mmpool* pool = mmp_new(mmp_buf, size, &cfg);
 
@@ -249,7 +249,7 @@ long test_mmpool(void)
 
 	for(long i = 0; i < count; i++)
 	{
-		rnd = random() % 1024;
+		rnd = random() % 65535;
 
 		if(rnd <= 0)
 			continue;
@@ -348,7 +348,7 @@ int main(void)
 	unsigned long i = test_asm_align8(10);
 	printf("%lu\n", i);
 
-	srandom(time(0));
+	srandom(1234);
 	test_mmpool();
 
 //	unsigned long r1 = rdtsc();
