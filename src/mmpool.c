@@ -34,6 +34,8 @@ struct _block_tail
 #define BLOCK_BIT_UNM			2
 #define BLOCK_BIT_UNM_SUC		4	
 
+#define PAGE_SIZE				0x1000
+
 #define HEAD_TAIL_SIZE (sizeof(struct _block_head) + sizeof(struct _block_tail))
 
 #define MIN_BLOCK_SIZE (32)
@@ -63,11 +65,11 @@ struct _free_list_head
 struct _mmpool_impl
 {
 	struct mmpool _pool;
-	long _fln_count;
 
-//	long _next_aval_fln_idx;
-//	long _max_used_fln_idx;
+	void* _chunk_addr;
+	long _chunk_size;
 
+	unsigned long _fln_count;
 	struct dlist _free_fln_list;
 	struct _free_list_node* _fln_pool;
 	struct _free_list_head _flh[FREE_LIST_COUNT];
@@ -485,14 +487,13 @@ static long _mmp_init_chunk(struct _mmpool_impl* mmpi)
 	long blk_size;
 	long rslt = -1;
 
-	struct _chunk_head* hd = (struct _chunk_head*)(mmpi->_pool.mm_addr);
+	struct _chunk_head* hd = (struct _chunk_head*)(mmpi->_chunk_addr - sizeof(struct _chunk_head));
 	if(!hd) goto error_ret;
 
 	hd->_chunck_label = CHUNK_LABEL;
 	hd->_reserved = 0;
-	end = mmpi->_pool.mm_addr + mmpi->_pool.mm_size;
-
-	chk1 = mmpi->_pool.mm_addr + sizeof(struct _chunk_head);
+	end = mmpi->_chunk_addr + mmpi->_chunk_size;
+	chk1 = mmpi->_chunk_addr;
 
 	for(long idx = FREE_LIST_COUNT - 1; idx > 0 && chk1 < end && chk2 < end; idx >>= 1)
 	{
@@ -518,17 +519,21 @@ error_ret:
 static long _mmp_load_chunk(struct _mmpool_impl* mmpi)
 {
 	void* chk;
+	void* end;
 	long blk_size;
 	long payload_size;
 	long rslt = 0;
 	struct _block_head* bhd;
 
-	struct _chunk_head* chd = (struct _chunk_head*)(mmpi->_pool.mm_addr);
+	struct _chunk_head* chd = (struct _chunk_head*)(mmpi->_chunk_addr - sizeof(struct _chunk_head));
 	if(!chd) goto error_ret;
+
 	if(chd->_chunck_label != CHUNK_LABEL) goto error_ret;
 
-	chk = mmpi->_pool.mm_addr + sizeof(struct _chunk_head);
-	while(chk <= mmpi->_pool.mm_addr + mmpi->_pool.mm_size)
+	chk = mmpi->_chunk_addr;
+	end = mmpi->_chunk_addr + mmpi->_chunk_size;
+
+	while(chk <= end)
 	{
 		bhd = (struct _block_head*)chk;
 		if(bhd->_flag & BLOCK_BIT_USED) continue;
@@ -582,8 +587,16 @@ struct mmpool* mmp_new(void* addr, long size)
 	}
 
 	mmpi->_pool.mm_addr = addr;
-	mmpi->_pool.mm_size = size / MAX_BLOCK_SIZE * MAX_BLOCK_SIZE
-		+ sizeof(struct _chunk_head);
+	mmpi->_pool.mm_size = size;
+
+
+	mmpi->_chunk_addr = addr + sizeof(struct _chunk_head) + PAGE_SIZE;
+	mmpi->_chunk_addr = (void*)((unsigned long)mmpi->_chunk_addr & (unsigned long)(-PAGE_SIZE));
+
+	if(mmpi->_chunk_addr < addr + sizeof(struct _chunk_head)) goto error_ret;
+
+	mmpi->_chunk_size = (size - (mmpi->_chunk_addr - mmpi->_pool.mm_addr)) & (-MAX_BLOCK_SIZE);
+	if(mmpi->_chunk_size <= 0) goto error_ret;
 
 	ch = (struct _chunk_head*)addr;
 	if(ch->_chunck_label == CHUNK_LABEL)
@@ -696,9 +709,9 @@ long mmp_check(struct mmpool* mmp)
 	struct _block_head* h = 0;
 	struct _mmpool_impl* mmpi = (struct _mmpool_impl*)mmp;
 
-	h = (struct _block_head*)(mmpi->_pool.mm_addr + sizeof(struct _chunk_head));
+	h = (struct _block_head*)(mmpi->_chunk_addr);
 
-	while((void*)h < (void*)mmpi->_pool.mm_addr + mmpi->_pool.mm_size)
+	while((void*)h < (void*)mmpi->_chunk_addr + mmpi->_chunk_size)
 	{
 		if(h->_flag != 0)
 			printf("flag: %d, block size: %d.\n", h->_flag, h->_block_size);
