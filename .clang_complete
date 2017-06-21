@@ -1,0 +1,4 @@
+-DDEBUG
+-I./inc
+-I/usr/include
+-I/usr/local/include
