@@ -12,12 +12,16 @@
 #include "utask.h"
 #include "misc.h"
 #include "mmpool.h"
+#include <signal.h>
+#include <unistd.h>
 
 const char* share_memory_name = "test_shm_17x";
 
 int test_arr[100];
 
 char* mmp_buf;
+
+long running = 0;
 
 void swap(int* a, int* b)
 {
@@ -55,6 +59,11 @@ void print_node(struct rbnode* node)
 //		printf("%d(%d)[%d,%d] ", node->key, node->isblack, lc ? lc->key:0, rc ? rc->key:0);
 	}
 
+}
+
+void signal_stop(int sig)
+{
+	running = 0;
 }
 
 void test_rbtree(void)
@@ -226,7 +235,98 @@ error_ret:
 	return;
 }
 
-long test_mmpool(void)
+struct mmp_test_entry
+{
+	void* _block;
+	long _size;
+	long _usage_duration;
+	long _alloc_time;
+};
+
+long test_mmp(long total_size, long min_block_idx, long max_block_idx, long node_count)
+{
+	long rslt = 0;
+	void* mm_buf = 0;
+	unsigned long now_time = 0;
+	unsigned long loop_count = 0;
+	long req_total_size = 0;
+	long min_block_size, max_block_size;
+	struct mmpool* mp = 0;
+	struct mmp_test_entry te[node_count];
+
+	struct mmpool_config cfg;
+	cfg.min_block_index = min_block_idx;
+	cfg.max_block_index = max_block_idx;
+
+	mmp_buf = malloc(total_size);
+	if(!mmp_buf) goto error_ret;
+
+	mp = mmp_new(mmp_buf, total_size, &cfg);
+	if(!mp) goto error_ret;
+
+	min_block_size = 1 << min_block_idx;
+	max_block_size = 1 << max_block_idx;
+
+	for(long i = 0; i < node_count; ++i)
+	{
+		te[i]._size = random() % (max_block_size - 16);
+		te[i]._block = 0;
+		te[i]._usage_duration = random() % 128;
+		te[i]._alloc_time = 0;
+
+		req_total_size += te[i]._size;
+	}
+
+	printf("req_total_size : %ld\n", req_total_size);
+	running = 1;
+
+	signal(SIGINT, signal_stop);
+
+	while(running)
+	{
+		now_time = time(0);
+		loop_count++;
+
+		for(long i = 0; i < node_count; ++i)
+		{
+			if(te[i]._alloc_time == 0)
+			{
+				te[i]._block = mmp_alloc(mp, te[i]._size);
+				if(!te[i]._block)
+				{
+					printf("alloc error, loopcount: %ld, idx: %ld, reqsize: %ld.\n", loop_count, i, te[i]._size);
+					goto error_ret;
+				}
+
+				te[i]._alloc_time = now_time;
+			}
+			else if(te[i]._alloc_time + te[i]._usage_duration > now_time)
+			{
+				rslt = mmp_free(mp, te[i]._block);
+				if(rslt < 0)
+				{
+					printf("free error, loopcount: %ld, idx: %ld.\n", loop_count, i);
+					goto error_ret;
+				}
+				te[i]._alloc_time = 0;
+			}
+		}
+		if(rslt < 0) goto error_ret;
+//		printf();
+		usleep(100);
+	}
+
+	mmp_del(mp);
+
+	printf("test_mmp successed.\n");
+	return 0;
+error_ret:
+	mmp_check(mp);
+	printf("test_mmp failed.\n");
+	return -1;
+}
+
+long profile_mmpool(void)
 {
 	long rslt = 0;
 	unsigned int size = 100 * 1024 * 1024;
@@ -343,13 +443,35 @@ unsigned long test_asm_align8(unsigned long val)
 	return ret;
 }
 
+long test_mmcpy(void)
+{
+	char a[16] = "abcdefghijklmnop";
+	char b[16] = {0};
+
+	quick_mmcpy_a(b, a, 16);
+}
+
+
+long test_qqq(long a, long b, long c)
+{
+	if(a > 1 || b > 1 || c > 1)
+		return 0;
+
+	return -1;
+}
+
 int main(void)
 {
 	unsigned long i = test_asm_align8(10);
 	printf("%lu\n", i);
 
+//	test_mmcpy();
+
 	srandom(1234);
-	test_mmpool();
+	test_mmp(500 * 1024 * 1024, 6, 10, 1024);
+//	profile_mmpool();
+
+
 
 //	unsigned long r1 = rdtsc();
 //	unsigned int aaa = align_to_2power_top(11);

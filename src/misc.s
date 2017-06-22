@@ -80,7 +80,26 @@ rdtsc:
 	.type	log_2, @function
 log_2:
 	.cfi_startproc
-	rdtsc
 	bsrq	%rdi, %rax
 	ret
 	.cfi_endproc
+
+
+	.globl	quick_mmcpy_a	
+	.type	quick_mmcpy_a, @function
+quick_mmcpy_a:
+	.cfi_startproc
+
+.Q_MMCPY_START:
+	testq	%rdx, %rdx
+	jle		.Q_MMCPY_FINISH
+	movdqa	(%rsi), %xmm0
+	movdqa	%xmm0, (%rdi)
+	addq	$0x10, %rsi
+	addq	$0x10, %rdi
+	subq	$0x10, %rdx
+	jmp		.Q_MMCPY_START
+.Q_MMCPY_FINISH:
+	ret
+	.cfi_endproc
+

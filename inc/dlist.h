@@ -9,13 +9,14 @@ struct dlnode
 
 struct dlist
 {
-	long size;
+//	long size;
 	struct dlnode head;
 	struct dlnode tail;
 };
 
 long lst_new(struct dlist* lst);
 long lst_clr(struct dlnode* node);
+long lst_empty(struct dlist* lst);
 
 
 long lst_insert_before(struct dlist* lst, struct dlnode* suc, struct dlnode* node);
