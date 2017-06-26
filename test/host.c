@@ -249,10 +249,13 @@ long test_mmp(long total_size, long min_block_idx, long max_block_idx, long node
 	void* mm_buf = 0;
 	unsigned long now_time = 0;
 	unsigned long loop_count = 0;
+	unsigned long restart_alloc_time = 0;
 	long req_total_size = 0;
 	long min_block_size, max_block_size;
+	long enable_alloc = 1;
 	struct mmpool* mp = 0;
 	struct mmp_test_entry te[node_count];
+	struct timeval tv;
 
 	struct mmpool_config cfg;
 	cfg.min_block_index = min_block_idx;
@@ -271,7 +274,7 @@ long test_mmp(long total_size, long min_block_idx, long max_block_idx, long node
 	{
 		te[i]._size = random() % (max_block_size - 16);
 		te[i]._block = 0;
-		te[i]._usage_duration = random() % 128;
+		te[i]._usage_duration = random() % 1000;
 		te[i]._alloc_time = 0;
 
 		req_total_size += te[i]._size;
@@ -284,23 +287,35 @@ long test_mmp(long total_size, long min_block_idx, long max_block_idx, long node
 
 	while(running)
 	{
-		now_time = time(0);
+		gettimeofday(&tv, 0);
+		now_time = tv.tv_usec;
 		loop_count++;
 
 		for(long i = 0; i < node_count; ++i)
 		{
-			if(te[i]._alloc_time == 0)
+			if(enable_alloc)
 			{
-				te[i]._block = mmp_alloc(mp, te[i]._size);
-				if(!te[i]._block)
+				if(te[i]._alloc_time == 0)
 				{
-					printf("alloc error, loopcount: %ld, idx: %ld, reqsize: %ld.\n", loop_count, i, te[i]._size);
-					goto error_ret;
+					te[i]._block = mmp_alloc(mp, te[i]._size);
+					if(!te[i]._block)
+					{
+						printf("alloc error, loopcount: %ld, idx: %ld, reqsize: %ld.\n", loop_count, i, te[i]._size);
+						enable_alloc = 0;
+						restart_alloc_time = now_time + 2000;
+					}
+					else
+						te[i]._alloc_time = now_time;
 				}
-
-				te[i]._alloc_time = now_time;
 			}
-			else if(te[i]._alloc_time + te[i]._usage_duration > now_time)
+			else if(restart_alloc_time > now_time)
+			{
+				enable_alloc = 1;
+				restart_alloc_time = 0;
+			}
+
+
+			if(te[i]._alloc_time + te[i]._usage_duration > now_time)
 			{
 				rslt = mmp_free(mp, te[i]._block);
 				if(rslt < 0)
@@ -312,7 +327,7 @@ long test_mmp(long total_size, long min_block_idx, long max_block_idx, long node
 			}
 		}
 		if(rslt < 0) goto error_ret;
-//		printf();
+loop_continue:
 		usleep(100);
 	}
 

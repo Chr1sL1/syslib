@@ -139,6 +139,8 @@ static inline struct _free_list_node* _fetch_free_fln(struct _mmpool_impl* mmpi)
 	struct dlnode* dln = lst_pop_front(&mmpi->_free_fln_list);
 	struct _free_list_node* fln = (struct _free_list_node*)((void*)dln - (void*)(&((struct _free_list_node*)0)->_free_fln_node));
 
+	fln->_block = 0;
+	lst_clr(&fln->_list_node);
 
 	return fln;
 error_ret:
@@ -147,6 +149,7 @@ error_ret:
 
 static inline long _return_free_fln(struct _mmpool_impl* mmpi, struct _free_list_node* fln)
 {
+	fln->_block = 0;
 	lst_clr(&fln->_free_fln_node);
 	return lst_push_front(&mmpi->_free_fln_list, &fln->_free_fln_node);
 }
@@ -258,7 +261,6 @@ static long _return_free_node_to_head(struct _mmpool_impl* mmpi, struct _block_h
 
 	fln->_block = hd;
 	hd->_fln_idx = fln->_idx;
-	lst_clr(&fln->_list_node);
 	rslt = lst_push_front(&mmpi->_flh[flh_idx]._free_list, &fln->_list_node);
 
 	if(rslt < 0) goto error_ret;
@@ -285,7 +287,7 @@ static long _return_free_node_to_tail(struct _mmpool_impl* mmpi, struct _block_h
 	if(!fln) goto error_ret;
 
 	fln->_block = hd;
-	hd->_fln_idx = 0;
+	hd->_fln_idx = fln->_idx;
 	rslt = lst_push_back(&mmpi->_flh[flh_idx]._free_list, &fln->_list_node);
 
 	if(rslt < 0) goto error_ret;
@@ -301,6 +303,7 @@ error_ret:
 static long _take_free_node(struct _mmpool_impl* mmpi, long flh_idx, struct _block_head** rbh)
 {
 	struct _free_list_node* fln = 0;
+	void* bh;
 	long idx = flh_idx;
 
 	*rbh = 0;
@@ -317,14 +320,14 @@ static long _take_free_node(struct _mmpool_impl* mmpi, long flh_idx, struct _blo
 
 	if(idx > flh_idx)
 	{
-		struct _block_head* bh = fln->_block;
+		bh = fln->_block;
 		struct _block_head* h;
-		long new_size = bh->_block_size;
+		long new_size = ((struct _block_head*)bh)->_block_size;
 
 		for(long i = 0; i < idx - flh_idx; ++i)
 		{
 			new_size >>= 1;
-			h = (void*)bh + new_size;
+			h = bh + new_size;
 			h = _make_block(h, new_size);
 			_return_free_node_to_head(mmpi, h);
 		}
@@ -338,10 +341,8 @@ static long _take_free_node(struct _mmpool_impl* mmpi, long flh_idx, struct _blo
 	*rbh = fln->_block;
 	(*rbh)->_fln_idx = 0;
 
-	return _return_free_fln(mmpi, fln);
-
 succ_ret:
-	return 0;
+	return _return_free_fln(mmpi, fln);
 error_ret:
 	return -1;
 }
@@ -828,7 +829,7 @@ long mmp_check(struct mmpool* mmp)
 		if((h->_flag & BLOCK_BIT_USED) == 0 && (h->_flag & BLOCK_BIT_UNM) == 0)
 			sum_free_size += h->_block_size;
 
-		if(h->_flag & BLOCK_BIT_UNM != 0)
+		if((h->_flag & BLOCK_BIT_UNM) != 0)
 			printf("unm flag: %d, block: %u\n", h->_flag, h->_block_size);
 
 		h = _next_block(h);
