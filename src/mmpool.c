@@ -433,6 +433,34 @@ error_ret:
 	return -1;
 }
 
+static struct _block_head* _merge_buddy(struct _mmpool_impl* mmpi, struct _block_head* bh)
+{
+	long rslt;
+	long next_block_size;
+	struct _block_head* nbh;
+
+	if(bh->_flag != 0) goto error_ret;
+
+	nbh = _next_block(bh);
+	if(nbh->_flag != 0) goto error_ret;
+
+	if(bh->_block_size != nbh->_block_size) goto error_ret;
+
+	next_block_size = (bh->_block_size << 1);
+
+	if((((long)bh - (long)mmpi->_chunk_addr) & (-next_block_size)) != (((long)nbh - (long)mmpi->_chunk_addr) & (-next_block_size)))
+		goto error_ret;
+
+	rslt = _unlink_block(mmpi, bh);
+	if(rslt < 0) goto error_ret;
+	rslt = _unlink_block(mmpi, nbh);
+	if(rslt < 0) goto error_ret;
+
+	return _make_block(bh, next_block_size);
+error_ret:
+	return 0;
+}
+
 static struct _block_head* _merge_unmblock(struct _mmpool_impl* mmpi, struct _block_head* bh)
 {
 	long rslt;
@@ -709,11 +737,11 @@ void* mmp_alloc(struct mmpool* mmp, long payload_size)
 	if((bh->_flag & BLOCK_BIT_USED) || (bh->_flag & BLOCK_BIT_UNM))
 		goto error_ret;
 
-	if(bh->_flag == 0)
-	{
-		rslt = _try_spare_block(mmpi, bh, payload_size);
-		if(rslt < 0) goto error_ret;
-	}
+//	if(bh->_flag == 0)
+//	{
+//		rslt = _try_spare_block(mmpi, bh, payload_size);
+//		if(rslt < 0) goto error_ret;
+//	}
 
 	bh->_flag |= BLOCK_BIT_USED;
 
@@ -725,6 +753,7 @@ error_ret:
 long mmp_free(struct mmpool* mmp, void* p)
 {
 	long rslt = 0;
+	long max_block_size;
 	struct _mmpool_impl* mmpi = (struct _mmpool_impl*)mmp;
 	struct _block_head* bh;
 	struct _block_tail* tl;
@@ -741,22 +770,39 @@ long mmp_free(struct mmpool* mmp, void* p)
 	if((bh->_flag & BLOCK_BIT_USED) == 0) goto error_ret;
 	bh->_flag ^= BLOCK_BIT_USED;
 
-	if(bh->_flag & BLOCK_BIT_UNM)
-	{
-		bh = _merge_unmblock(mmpi, bh);
-		if(!bh) goto succ_ret;
+	rslt = _return_free_node_to_head(mmpi, bh);
+	if(rslt < 0) goto error_ret;
 
-		if(bh->_flag == 0)
-			rslt = _return_free_node_to_head(mmpi, bh);
-	}
-	else if(bh->_flag & BLOCK_BIT_UNM_SUC)
-	{
-		struct _block_head* pbh = _prev_block(bh);
-		bh = _merge_to_unmblock(mmpi, pbh);
-		if(!bh) goto succ_ret;
+//	if(bh->_flag & BLOCK_BIT_UNM)
+//	{
+//		bh = _merge_unmblock(mmpi, bh);
+//		if(!bh) goto succ_ret;
+//
+//		if(bh->_flag == 0)
+//			rslt = _return_free_node_to_head(mmpi, bh);
+//	}
+//	else if(bh->_flag & BLOCK_BIT_UNM_SUC)
+//	{
+//		struct _block_head* pbh = _prev_block(bh);
+//		bh = _merge_to_unmblock(mmpi, pbh);
+//		if(!bh) goto succ_ret;
+//
+//		if(bh->_flag == 0)
+//			rslt = _return_free_node_to_head(mmpi, bh);
+//	}
 
-		if(bh->_flag == 0)
-			rslt = _return_free_node_to_head(mmpi, bh);
+	max_block_size = _block_size(mmpi->_cfg._max_block_idx);
+	while(1)
+	{
+		long offset = (long)bh - (long)mmpi->_chunk_addr;
+		long next_block_size = (bh->_block_size << 1);
+		if(next_block_size < max_block_size && ((offset & -next_block_size) == offset))
+			bh = _merge_buddy(mmpi, bh);
+		else
+			bh = _merge_buddy(mmpi, _prev_block(bh));
+
+		if(!bh)
+			break;
 	}
 
 	return rslt;
