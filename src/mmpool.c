@@ -347,7 +347,7 @@ error_ret:
 	return -1;
 }
 
-static long _try_spare_block(struct _mmpool_impl* mmpi, struct _block_head* bh, unsigned int payload_size)
+static long _try_spare_block(struct _mmpool_impl* mmpi, struct _block_head* bh, long payload_size)
 {
 	struct _block_head* h;
 	long offset;
@@ -356,7 +356,7 @@ static long _try_spare_block(struct _mmpool_impl* mmpi, struct _block_head* bh, 
 	if(bh->_flag != 0) goto error_ret;
 	else if(!is_2power(bh->_block_size)) goto error_ret;
 
-	payload_size = align8(payload_size);
+	payload_size = (long)align8(payload_size);
 
 	if(payload_size <= mmpi->_cfg._min_payload_size) goto succ_ret;
 

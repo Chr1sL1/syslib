@@ -1,13 +1,13 @@
 #ifndef __misc_h__
 #define __misc_h__
 
-unsigned int align_to_2power_top(unsigned int val);
-unsigned int align_to_2power_floor(unsigned int val);
+unsigned long align_to_2power_top(unsigned long val);
+unsigned long align_to_2power_floor(unsigned long val);
 unsigned long rdtsc(void);
 long log_2(long val);
-int is_2power(unsigned int val);
+long is_2power(unsigned long val);
 
-unsigned int align8(unsigned val);
+void* align8(void* val);
 void* align16(void* p);
 
 void quick_mmcpy_a(void* dst, void* src, unsigned long size);

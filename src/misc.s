@@ -3,16 +3,16 @@
 	.type	align_to_2power_top, @function
 align_to_2power_top:
 	.cfi_startproc
-	xorl	%eax, %eax
-	testl	%edi, %edi
+	xorq	%rax, %rax
+	testq	%rdi, %rdi
 	je		.ALIGN_TO_2POWER_TOP_RET
-	bsrl	%edi, %ecx
-	bsfl	%edi, %edx
-	leal	0x1(%ecx), %esi
-	cmpl	%ecx, %edx
-	cmovnel	%esi, %ecx
-	movl	$1, %eax
-	sall	%cl, %eax
+	bsrq	%rdi, %rcx
+	bsfq	%rdi, %rdx
+	leaq	0x1(%rcx), %rsi
+	cmpq	%rcx, %rdx
+	cmovneq	%rsi, %rcx
+	movq	$1, %rax
+	salq	%cl, %rax
 .ALIGN_TO_2POWER_TOP_RET:
 	ret
 	.cfi_endproc
@@ -21,13 +21,13 @@ align_to_2power_top:
 	.type	align_to_2power_floor, @function
 align_to_2power_floor:
 	.cfi_startproc
-	xorl	%eax, %eax
-	testl	%edi, %edi
+	xorq	%rax, %rax
+	testq	%rdi, %rdi
 	je		.ALIGN_TO_2POWER_FLOOR_RET
-	bsrl	%edi, %ecx
-	leal	0x1(%ecx), %esi
-	movl	$1, %eax
-	sall	%cl, %eax
+	bsrq	%rdi, %rcx
+	leaq	0x1(%rcx), %rsi
+	movq	$1, %rax
+	salq	%cl, %rax
 .ALIGN_TO_2POWER_FLOOR_RET:
 	ret
 	.cfi_endproc
@@ -36,11 +36,11 @@ align_to_2power_floor:
 	.type	is_2power, @function
 is_2power:
 	.cfi_startproc
-	xorl	%eax, %eax
-	bsrl	%edi, %ecx
-	bsfl	%edi, %edx
-	leal	0x1(%ecx), %esi
-	cmpl	%ecx, %edx
+	xorq	%rax, %rax
+	bsrq	%rdi, %rcx
+	bsfq	%rdi, %rdx
+	leaq	0x1(%rcx), %rsi
+	cmpq	%rcx, %rdx
 	sete	%al
 	ret
 	.cfi_endproc
@@ -49,9 +49,9 @@ is_2power:
 	.type	align8, @function
 align8:
 	.cfi_startproc
-	addl	$8, %edi
-	andl	$-8, %edi
-	movl	%edi, %eax
+	addq	$8, %rdi
+	andq	$-8, %rdi
+	movq	%rdi, %rax
 	ret
 	.cfi_endproc
 
