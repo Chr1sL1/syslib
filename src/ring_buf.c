@@ -154,265 +154,265 @@ error_ret:
 	return -1;
 }
 
-long rbuf_write_word(struct ring_buf* rbuf, unsigned short val)
-{
-	long r_offset, w_offset;
-
-	struct _ring_buf_impl* rbi = (struct _ring_buf_impl*)rbuf;
-	if(rbi == 0 || rbi->_chunk_addr == 0) goto error_ret;
-
-	r_offset = rbi->_hd->r_offset;
-	w_offset = rbi->_hd->w_offset;
-
-	if(w_offset < r_offset)
-	{
-		if(r_offset - w_offset < sizeof(unsigned short))
-			goto error_ret;
-
-		*((unsigned short*)(rbi->_chunk_addr + w_offset)) = val;
-		w_offset += sizeof(unsigned short);
-
-		goto succ_ret;
-	}
-	else if(w_offset + sizeof(unsigned short) < rbi->_chunk_size)
-	{
-		*((unsigned short*)(rbi->_chunk_addr + w_offset)) = val;
-		w_offset += sizeof(unsigned short);
-
-		goto succ_ret;
-	}
-	else if(r_offset > sizeof(unsigned short))
-	{
-		*((unsigned short*)(rbi->_chunk_addr)) = val;
-		w_offset = sizeof(unsigned short);
-
-		goto succ_ret;
-	}
-
-	goto error_ret;
-
-succ_ret:
-	rbi->_hd->w_offset = w_offset;
-	return 0;
-error_ret:
-	return -1;
-}
-
-long rbuf_read_word(struct ring_buf* rbuf, unsigned short* val)
-{
-	long r_offset, w_offset;
-
-	struct _ring_buf_impl* rbi = (struct _ring_buf_impl*)rbuf;
-	if(rbi == 0 || rbi->_chunk_addr == 0) goto error_ret;
-
-	r_offset = rbi->_hd->r_offset;
-	w_offset = rbi->_hd->w_offset;
-
-	if(r_offset < w_offset)
-	{
-		if(w_offset - r_offset < sizeof(unsigned short))
-			goto error_ret;
-
-		*val = *((unsigned short*)(rbi->_chunk_addr + r_offset));
-		r_offset += sizeof(unsigned short);
-
-		goto succ_ret;
-	}
-	else if(r_offset + sizeof(unsigned short) < rbi->_chunk_size)
-	{
-		*val = *((unsigned short*)(rbi->_chunk_addr + r_offset));
-		r_offset += sizeof(unsigned short);
-
-		goto succ_ret;
-	}
-	else if(w_offset > sizeof(unsigned short))
-	{
-		*val = *((unsigned short*)(rbi->_chunk_addr));
-		r_offset = sizeof(unsigned short);
-
-		goto succ_ret;
-	}
-
-	goto error_ret;
-
-succ_ret:
-	rbi->_hd->r_offset = r_offset;
-	return 0;
-error_ret:
-	return -1;
-}
-
-long rbuf_write_dword(struct ring_buf* rbuf, unsigned int val)
-{
-	long r_offset, w_offset;
-
-	struct _ring_buf_impl* rbi = (struct _ring_buf_impl*)rbuf;
-	if(rbi == 0 || rbi->_chunk_addr == 0) goto error_ret;
-
-	r_offset = rbi->_hd->r_offset;
-	w_offset = rbi->_hd->w_offset;
-
-	if(w_offset < r_offset)
-	{
-		if(r_offset - w_offset < sizeof(unsigned int))
-			goto error_ret;
-
-		*((unsigned int*)(rbi->_chunk_addr + w_offset)) = val;
-		w_offset += sizeof(unsigned int);
-
-		goto succ_ret;
-	}
-	else if(w_offset + sizeof(unsigned int) < rbi->_chunk_size)
-	{
-		*((unsigned int*)(rbi->_chunk_addr + w_offset)) = val;
-		w_offset += sizeof(unsigned int);
-
-		goto succ_ret;
-	}
-	else if(r_offset > sizeof(unsigned int))
-	{
-		*((unsigned int*)(rbi->_chunk_addr)) = val;
-		w_offset = sizeof(unsigned int);
-
-		goto succ_ret;
-	}
-
-	goto error_ret;
-
-succ_ret:
-	rbi->_hd->w_offset = w_offset;
-	return 0;
-error_ret:
-	return -1;
-}
-long rbuf_read_dword(struct ring_buf* rbuf, unsigned int* val)
-{
-	long r_offset, w_offset;
-
-	struct _ring_buf_impl* rbi = (struct _ring_buf_impl*)rbuf;
-	if(rbi == 0 || rbi->_chunk_addr == 0) goto error_ret;
-
-	r_offset = rbi->_hd->r_offset;
-	w_offset = rbi->_hd->w_offset;
-
-	if(r_offset < w_offset)
-	{
-		if(w_offset - r_offset < sizeof(unsigned int))
-			goto error_ret;
-
-		*val = *((unsigned int*)(rbi->_chunk_addr + r_offset));
-		r_offset += sizeof(unsigned int);
-
-		goto succ_ret;
-	}
-	else if(r_offset + sizeof(unsigned int) < rbi->_chunk_size)
-	{
-		*val = *((unsigned int*)(rbi->_chunk_addr + r_offset));
-		r_offset += sizeof(unsigned int);
-
-		goto succ_ret;
-	}
-	else if(w_offset > sizeof(unsigned int))
-	{
-		*val = *((unsigned int*)(rbi->_chunk_addr));
-		r_offset = sizeof(unsigned int);
-
-		goto succ_ret;
-	}
-
-	goto error_ret;
-
-succ_ret:
-	rbi->_hd->r_offset = r_offset;
-	return 0;
-error_ret:
-	return -1;
-}
-
-long rbuf_write_qword(struct ring_buf* rbuf, unsigned long val)
-{
-	long r_offset, w_offset;
-
-	struct _ring_buf_impl* rbi = (struct _ring_buf_impl*)rbuf;
-	if(rbi == 0 || rbi->_chunk_addr == 0) goto error_ret;
-
-	r_offset = rbi->_hd->r_offset;
-	w_offset = rbi->_hd->w_offset;
-
-	if(w_offset < r_offset)
-	{
-		if(r_offset - w_offset < sizeof(unsigned long))
-			goto error_ret;
-
-		*((unsigned long*)(rbi->_chunk_addr + w_offset)) = val;
-		w_offset += sizeof(unsigned long);
-
-		goto succ_ret;
-	}
-	else if(w_offset + sizeof(unsigned long) < rbi->_chunk_size)
-	{
-		*((unsigned long*)(rbi->_chunk_addr + w_offset)) = val;
-		w_offset += sizeof(unsigned long);
-
-		goto succ_ret;
-	}
-	else if(r_offset > sizeof(unsigned long))
-	{
-		*((unsigned long*)(rbi->_chunk_addr)) = val;
-		w_offset = sizeof(unsigned long);
-
-		goto succ_ret;
-	}
-
-	goto error_ret;
-
-succ_ret:
-	rbi->_hd->w_offset = w_offset;
-	return 0;
-error_ret:
-	return -1;
-}
-
-long rbuf_read_qword(struct ring_buf* rbuf, unsigned long* val)
-{
-	long r_offset, w_offset;
-
-	struct _ring_buf_impl* rbi = (struct _ring_buf_impl*)rbuf;
-	if(rbi == 0 || rbi->_chunk_addr == 0) goto error_ret;
-
-	r_offset = rbi->_hd->r_offset;
-	w_offset = rbi->_hd->w_offset;
-
-	if(r_offset < w_offset)
-	{
-		if(w_offset - r_offset < sizeof(unsigned long))
-			goto error_ret;
-
-		*val = *((unsigned long*)(rbi->_chunk_addr + r_offset));
-		r_offset += sizeof(unsigned long);
-
-		goto succ_ret;
-	}
-	else if(r_offset + sizeof(unsigned long) < rbi->_chunk_size)
-	{
-		*val = *((unsigned long*)(rbi->_chunk_addr + r_offset));
-		r_offset += sizeof(unsigned long);
-
-		goto succ_ret;
-	}
-	else if(w_offset > sizeof(unsigned long))
-	{
-		*val = *((unsigned long*)(rbi->_chunk_addr));
-		r_offset = sizeof(unsigned long);
-
-		goto succ_ret;
-	}
-
-	goto error_ret;
-
-succ_ret:
-	rbi->_hd->r_offset = r_offset;
-	return 0;
-error_ret:
-	return -1;
-}
+//long rbuf_write_word(struct ring_buf* rbuf, unsigned short val)
+//{
+//	long r_offset, w_offset;
+//
+//	struct _ring_buf_impl* rbi = (struct _ring_buf_impl*)rbuf;
+//	if(rbi == 0 || rbi->_chunk_addr == 0) goto error_ret;
+//
+//	r_offset = rbi->_hd->r_offset;
+//	w_offset = rbi->_hd->w_offset;
+//
+//	if(w_offset < r_offset)
+//	{
+//		if(r_offset - w_offset < sizeof(unsigned short))
+//			goto error_ret;
+//
+//		*((unsigned short*)(rbi->_chunk_addr + w_offset)) = val;
+//		w_offset += sizeof(unsigned short);
+//
+//		goto succ_ret;
+//	}
+//	else if(w_offset + sizeof(unsigned short) < rbi->_chunk_size)
+//	{
+//		*((unsigned short*)(rbi->_chunk_addr + w_offset)) = val;
+//		w_offset += sizeof(unsigned short);
+//
+//		goto succ_ret;
+//	}
+//	else if(r_offset > sizeof(unsigned short))
+//	{
+//		*((unsigned short*)(rbi->_chunk_addr)) = val;
+//		w_offset = sizeof(unsigned short);
+//
+//		goto succ_ret;
+//	}
+//
+//	goto error_ret;
+//
+//succ_ret:
+//	rbi->_hd->w_offset = w_offset;
+//	return 0;
+//error_ret:
+//	return -1;
+//}
+//
+//long rbuf_read_word(struct ring_buf* rbuf, unsigned short* val)
+//{
+//	long r_offset, w_offset;
+//
+//	struct _ring_buf_impl* rbi = (struct _ring_buf_impl*)rbuf;
+//	if(rbi == 0 || rbi->_chunk_addr == 0) goto error_ret;
+//
+//	r_offset = rbi->_hd->r_offset;
+//	w_offset = rbi->_hd->w_offset;
+//
+//	if(r_offset < w_offset)
+//	{
+//		if(w_offset - r_offset < sizeof(unsigned short))
+//			goto error_ret;
+//
+//		*val = *((unsigned short*)(rbi->_chunk_addr + r_offset));
+//		r_offset += sizeof(unsigned short);
+//
+//		goto succ_ret;
+//	}
+//	else if(r_offset + sizeof(unsigned short) < rbi->_chunk_size)
+//	{
+//		*val = *((unsigned short*)(rbi->_chunk_addr + r_offset));
+//		r_offset += sizeof(unsigned short);
+//
+//		goto succ_ret;
+//	}
+//	else if(w_offset > sizeof(unsigned short))
+//	{
+//		*val = *((unsigned short*)(rbi->_chunk_addr));
+//		r_offset = sizeof(unsigned short);
+//
+//		goto succ_ret;
+//	}
+//
+//	goto error_ret;
+//
+//succ_ret:
+//	rbi->_hd->r_offset = r_offset;
+//	return 0;
+//error_ret:
+//	return -1;
+//}
+//
+//long rbuf_write_dword(struct ring_buf* rbuf, unsigned int val)
+//{
+//	long r_offset, w_offset;
+//
+//	struct _ring_buf_impl* rbi = (struct _ring_buf_impl*)rbuf;
+//	if(rbi == 0 || rbi->_chunk_addr == 0) goto error_ret;
+//
+//	r_offset = rbi->_hd->r_offset;
+//	w_offset = rbi->_hd->w_offset;
+//
+//	if(w_offset < r_offset)
+//	{
+//		if(r_offset - w_offset < sizeof(unsigned int))
+//			goto error_ret;
+//
+//		*((unsigned int*)(rbi->_chunk_addr + w_offset)) = val;
+//		w_offset += sizeof(unsigned int);
+//
+//		goto succ_ret;
+//	}
+//	else if(w_offset + sizeof(unsigned int) < rbi->_chunk_size)
+//	{
+//		*((unsigned int*)(rbi->_chunk_addr + w_offset)) = val;
+//		w_offset += sizeof(unsigned int);
+//
+//		goto succ_ret;
+//	}
+//	else if(r_offset > sizeof(unsigned int))
+//	{
+//		*((unsigned int*)(rbi->_chunk_addr)) = val;
+//		w_offset = sizeof(unsigned int);
+//
+//		goto succ_ret;
+//	}
+//
+//	goto error_ret;
+//
+//succ_ret:
+//	rbi->_hd->w_offset = w_offset;
+//	return 0;
+//error_ret:
+//	return -1;
+//}
+//long rbuf_read_dword(struct ring_buf* rbuf, unsigned int* val)
+//{
+//	long r_offset, w_offset;
+//
+//	struct _ring_buf_impl* rbi = (struct _ring_buf_impl*)rbuf;
+//	if(rbi == 0 || rbi->_chunk_addr == 0) goto error_ret;
+//
+//	r_offset = rbi->_hd->r_offset;
+//	w_offset = rbi->_hd->w_offset;
+//
+//	if(r_offset < w_offset)
+//	{
+//		if(w_offset - r_offset < sizeof(unsigned int))
+//			goto error_ret;
+//
+//		*val = *((unsigned int*)(rbi->_chunk_addr + r_offset));
+//		r_offset += sizeof(unsigned int);
+//
+//		goto succ_ret;
+//	}
+//	else if(r_offset + sizeof(unsigned int) < rbi->_chunk_size)
+//	{
+//		*val = *((unsigned int*)(rbi->_chunk_addr + r_offset));
+//		r_offset += sizeof(unsigned int);
+//
+//		goto succ_ret;
+//	}
+//	else if(w_offset > sizeof(unsigned int))
+//	{
+//		*val = *((unsigned int*)(rbi->_chunk_addr));
+//		r_offset = sizeof(unsigned int);
+//
+//		goto succ_ret;
+//	}
+//
+//	goto error_ret;
+//
+//succ_ret:
+//	rbi->_hd->r_offset = r_offset;
+//	return 0;
+//error_ret:
+//	return -1;
+//}
+//
+//long rbuf_write_qword(struct ring_buf* rbuf, unsigned long val)
+//{
+//	long r_offset, w_offset;
+//
+//	struct _ring_buf_impl* rbi = (struct _ring_buf_impl*)rbuf;
+//	if(rbi == 0 || rbi->_chunk_addr == 0) goto error_ret;
+//
+//	r_offset = rbi->_hd->r_offset;
+//	w_offset = rbi->_hd->w_offset;
+//
+//	if(w_offset < r_offset)
+//	{
+//		if(r_offset - w_offset < sizeof(unsigned long))
+//			goto error_ret;
+//
+//		*((unsigned long*)(rbi->_chunk_addr + w_offset)) = val;
+//		w_offset += sizeof(unsigned long);
+//
+//		goto succ_ret;
+//	}
+//	else if(w_offset + sizeof(unsigned long) < rbi->_chunk_size)
+//	{
+//		*((unsigned long*)(rbi->_chunk_addr + w_offset)) = val;
+//		w_offset += sizeof(unsigned long);
+//
+//		goto succ_ret;
+//	}
+//	else if(r_offset > sizeof(unsigned long))
+//	{
+//		*((unsigned long*)(rbi->_chunk_addr)) = val;
+//		w_offset = sizeof(unsigned long);
+//
+//		goto succ_ret;
+//	}
+//
+//	goto error_ret;
+//
+//succ_ret:
+//	rbi->_hd->w_offset = w_offset;
+//	return 0;
+//error_ret:
+//	return -1;
+//}
+//
+//long rbuf_read_qword(struct ring_buf* rbuf, unsigned long* val)
+//{
+//	long r_offset, w_offset;
+//
+//	struct _ring_buf_impl* rbi = (struct _ring_buf_impl*)rbuf;
+//	if(rbi == 0 || rbi->_chunk_addr == 0) goto error_ret;
+//
+//	r_offset = rbi->_hd->r_offset;
+//	w_offset = rbi->_hd->w_offset;
+//
+//	if(r_offset < w_offset)
+//	{
+//		if(w_offset - r_offset < sizeof(unsigned long))
+//			goto error_ret;
+//
+//		*val = *((unsigned long*)(rbi->_chunk_addr + r_offset));
+//		r_offset += sizeof(unsigned long);
+//
+//		goto succ_ret;
+//	}
+//	else if(r_offset + sizeof(unsigned long) < rbi->_chunk_size)
+//	{
+//		*val = *((unsigned long*)(rbi->_chunk_addr + r_offset));
+//		r_offset += sizeof(unsigned long);
+//
+//		goto succ_ret;
+//	}
+//	else if(w_offset > sizeof(unsigned long))
+//	{
+//		*val = *((unsigned long*)(rbi->_chunk_addr));
+//		r_offset = sizeof(unsigned long);
+//
+//		goto succ_ret;
+//	}
+//
+//	goto error_ret;
+//
+//succ_ret:
+//	rbi->_hd->r_offset = r_offset;
+//	return 0;
+//error_ret:
+//	return -1;
+//}

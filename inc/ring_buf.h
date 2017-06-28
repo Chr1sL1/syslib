@@ -13,14 +13,14 @@ void rbuf_del(struct ring_buf* rbuf);
 long rbuf_write_block(struct ring_buf* rb, const void* data, long datalen);
 long rbuf_read_block(struct ring_buf* rb, void* buf, long buflen);
 
-long rbuf_write_word(struct ring_buf* rb, unsigned short val);
-long rbuf_read_word(struct ring_buf* rb, unsigned short* val);
-
-long rbuf_write_dword(struct ring_buf* rb, unsigned int val);
-long rbuf_read_dword(struct ring_buf* rb, unsigned int* val);
-
-long rbuf_write_qword(struct ring_buf* rb, unsigned long val);
-long rbuf_read_qword(struct ring_buf* rb, unsigned long* val);
+//long rbuf_write_word(struct ring_buf* rb, unsigned short val);
+//long rbuf_read_word(struct ring_buf* rb, unsigned short* val);
+//
+//long rbuf_write_dword(struct ring_buf* rb, unsigned int val);
+//long rbuf_read_dword(struct ring_buf* rb, unsigned int* val);
+//
+//long rbuf_write_qword(struct ring_buf* rb, unsigned long val);
+//long rbuf_read_qword(struct ring_buf* rb, unsigned long* val);
 
 
 #endif //__ring_buf_h__

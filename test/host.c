@@ -61,8 +61,12 @@ void print_node(struct rbnode* node)
 
 }
 
-void signal_stop(int sig)
+void signal_stop(int sig, siginfo_t* t, void* usr_data)
 {
+	struct mmpool* mp = (struct mmpool*)usr_data;
+	printf("------------------recvd signal------------------------\n");
+	mmp_freelist_profile(mp);
+	printf("------------------signal end------------------------\n");
 	running = 0;
 }
 
@@ -283,7 +287,12 @@ long test_mmp(long total_size, long min_block_idx, long max_block_idx, long node
 	printf("req_total_size : %ld\n", req_total_size);
 	running = 1;
 
-	signal(SIGINT, signal_stop);
+	struct sigaction sa;
+	sa.sa_sigaction = signal_stop;
+	sa.sa_flags = SA_SIGINFO;
+	sigaction(SIGINT, &sa, 0);
+
+	mmp_freelist_profile(mp);
 
 	while(running)
 	{
@@ -305,7 +314,13 @@ long test_mmp(long total_size, long min_block_idx, long max_block_idx, long node
 						restart_alloc_time = now_time + 2000;
 					}
 					else
+					{
 						te[i]._alloc_time = now_time;
+
+						printf("--- alloc [%ld], idx: %ld.\n", te[i]._size, i);
+
+//						mmp_freelist_profile(mp);
+					}
 				}
 			}
 			else if(restart_alloc_time > now_time)
@@ -315,7 +330,7 @@ long test_mmp(long total_size, long min_block_idx, long max_block_idx, long node
 			}
 
 
-			if(te[i]._alloc_time + te[i]._usage_duration > now_time)
+			if(te[i]._alloc_time + te[i]._usage_duration < now_time)
 			{
 				rslt = mmp_free(mp, te[i]._block);
 				if(rslt < 0)
@@ -323,12 +338,17 @@ long test_mmp(long total_size, long min_block_idx, long max_block_idx, long node
 					printf("free error, loopcount: %ld, idx: %ld.\n", loop_count, i);
 					goto error_ret;
 				}
+
+				printf("--- free [%ld], idx: %ld.\n", te[i]._size, i);
 				te[i]._alloc_time = 0;
 			}
+
+//			mmp_freelist_profile(mp);
+
 		}
 		if(rslt < 0) goto error_ret;
 loop_continue:
-		usleep(100);
+		usleep(1000);
 	}
 
 	mmp_del(mp);
@@ -355,8 +375,8 @@ long profile_mmpool(void)
 
 	mmp_buf = malloc(size);
 	struct mmpool_config cfg;
-	cfg.min_block_index = 5;
-	cfg.max_block_index = 16;
+	cfg.min_block_index = 6;
+	cfg.max_block_index = 10;
 
 	struct mmpool* pool = mmp_new(mmp_buf, size, &cfg);
 
@@ -364,7 +384,7 @@ long profile_mmpool(void)
 
 	for(long i = 0; i < count; i++)
 	{
-		rnd = random() % 65535;
+		rnd = random() % 1024;
 
 		if(rnd <= 0)
 			continue;
@@ -483,7 +503,7 @@ int main(void)
 //	test_mmcpy();
 
 	srandom(1234);
-	test_mmp(500 * 1024 * 1024, 6, 10, 1024);
+	test_mmp(1024 * 1024, 6, 10, 64);
 //	profile_mmpool();
 
 

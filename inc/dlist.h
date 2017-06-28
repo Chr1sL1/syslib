@@ -9,7 +9,7 @@ struct dlnode
 
 struct dlist
 {
-//	long size;
+	long size;
 	struct dlnode head;
 	struct dlnode tail;
 };

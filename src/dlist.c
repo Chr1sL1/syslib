@@ -10,7 +10,7 @@ long lst_new(struct dlist* lst)
 	lst->tail.prev = &lst->head;
 	lst->tail.next = 0;
 
-//	lst->size = 0;
+	lst->size = 0;
 
 	return 0;
 error_ret:
@@ -49,7 +49,7 @@ long lst_insert_before(struct dlist* lst, struct dlnode* suc, struct dlnode* nod
 	suc->prev->next = node;
 	suc->prev = node;
 
-//	++lst->size;
+	++lst->size;
 
 	return 0;
 error_ret:
@@ -67,7 +67,7 @@ long lst_insert_after(struct dlist* lst, struct dlnode* prv, struct dlnode* node
 	prv->next->prev = node;
 	prv->next = node;
 
-//	++lst->size;
+	++lst->size;
 
 	return 0;
 error_ret:
@@ -87,7 +87,7 @@ long lst_remove(struct dlist* lst, struct dlnode* node)
 	node->prev = 0;
 	node->next = 0;
 	
-//	--lst->size;
+	--lst->size;
 
 	return 0;
 error_ret:

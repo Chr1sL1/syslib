@@ -20,6 +20,7 @@ void* mmp_alloc(struct mmpool* mmp, long size);
 long mmp_free(struct mmpool* mmp, void* p);
 
 long mmp_check(struct mmpool* mmp);
+long mmp_freelist_profile(struct mmpool* mmp);
 
 
 #endif

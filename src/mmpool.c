@@ -793,7 +793,7 @@ long mmp_free(struct mmpool* mmp, void* p)
 //	}
 
 	max_block_size = _block_size(mmpi->_cfg._max_block_idx);
-	while(1)
+	while(bh->_block_size < max_block_size)
 	{
 		long offset = (long)bh - (long)mmpi->_chunk_addr;
 		long next_block_size = (bh->_block_size << 1);
@@ -804,6 +804,9 @@ long mmp_free(struct mmpool* mmp, void* p)
 
 		if(!bh)
 			break;
+
+		rslt = _return_free_node_to_head(mmpi, bh);
+		if(rslt < 0) goto error_ret;
 	}
 
 	return rslt;
@@ -873,4 +876,20 @@ long mmp_check(struct mmpool* mmp)
 error_ret:
 	return -1;
 }
+
+long mmp_freelist_profile(struct mmpool* mmp)
+{
+	struct _mmpool_impl* mmpi = (struct _mmpool_impl*)mmp;
+
+	for(long i = 0; i < mmpi->_cfg._free_list_count; ++i)
+	{
+		printf(">>> freelist [%ld], size [%ld].\n", i, mmpi->_flh[i]._free_list.size);
+
+	}
+
+	return 0;
+error_ret:
+	return -1;
+}
+
 
