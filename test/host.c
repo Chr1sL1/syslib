@@ -14,6 +14,7 @@
 #include "mmpool.h"
 #include <signal.h>
 #include <unistd.h>
+#include <string.h>
 
 const char* share_memory_name = "test_shm_17x";
 
@@ -480,19 +481,64 @@ unsigned long test_asm_align8(unsigned long val)
 
 long test_mmcpy(void)
 {
-	char a[16] = "abcdefghijklmnop";
-	char b[16] = {0};
+	unsigned long r1 = 0, r2 = 0;
+	long rslt = 0;
+	long len = random() % 10000000 + 10000000;
 
-	quick_mmcpy_a(b, a, 16);
+	static const char* alpha_beta
+		= "abcdefghijlmnopqrstuvwxyz1234567890";
+
+	char* src = malloc(len);
+	char* dst = malloc(len);
+
+	printf("test string len: %ld.\n", len);
+
+	for(long i = 0; i < len; ++i)
+	{
+		src[i] = alpha_beta[random() % strlen(alpha_beta)];
+	}
+	src[len - 1] = 0;
+
+	r1 = rdtsc();
+	rslt = memcpy(dst, src, len);
+	r2 = rdtsc();
+	printf("memcpy cycle: %lu.\n", r2 - r1);
+
+	r1 = rdtsc();
+	rslt = quick_mmcpy(dst, src, len);
+	r2 = rdtsc();
+
+//	printf("src: [%s]\n", src);
+//	printf("dst: [%s]\n", dst);
+
+	for(long i = 0; i < len; ++i)
+	{
+		if(dst[i] != src[i])
+		{
+			printf("mmcpy error @%ld.\n", i);
+			break;
+		}
+	}
+
+	printf("quick_mmcpy cycle: %lu.\n", r2 - r1);
+
+
+	free(dst);
+	free(src);
+	return rslt;
 }
 
 
 long test_qqq(long a, long b, long c)
 {
-	if(a > 1 || b > 1 || c > 1)
-		return 0;
+	if((a & 0xf) != 0 || (b & 0xf) != 0 || (c & 0xf) != 0)
+		return -1;
 
-	return -1;
+	a += 1;
+	b += 2;
+	c += 3;
+
+	return a + b + c;
 }
 
 int main(void)
@@ -500,10 +546,10 @@ int main(void)
 	unsigned long i = test_asm_align8(10);
 	printf("%lu\n", i);
 
-//	test_mmcpy();
+	srandom(time(0));
 
-	srandom(1234);
-	test_mmp(1024 * 1024, 6, 10, 64);
+	test_mmcpy();
+//	test_mmp(1024 * 1024, 6, 10, 64);
 //	profile_mmpool();
 
 

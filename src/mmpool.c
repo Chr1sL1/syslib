@@ -629,6 +629,9 @@ struct mmpool* mmp_new(void* addr, long size, struct mmpool_config* cfg)
 	min_block_size = 1 << cfg->min_block_index;
 	max_block_size = 1 << cfg->max_block_index;
 
+	if(min_block_size > max_block_size)
+		goto error_ret;
+
 	if(min_block_size < HEAD_TAIL_SIZE || max_block_size <= min_block_size)
 		goto error_ret;
 
