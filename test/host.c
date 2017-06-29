@@ -278,7 +278,7 @@ long test_mmp(long total_size, long min_block_idx, long max_block_idx, long node
 	{
 		te[i]._size = random() % (max_block_size - 16);
 		te[i]._block = 0;
-		te[i]._usage_duration = random() % 1000;
+		te[i]._usage_duration = random() % 200;
 		te[i]._alloc_time = 0;
 
 		req_total_size += te[i]._size;
@@ -297,7 +297,7 @@ long test_mmp(long total_size, long min_block_idx, long max_block_idx, long node
 	while(running)
 	{
 		gettimeofday(&tv, 0);
-		now_time = tv.tv_usec;
+		now_time = tv.tv_sec * 1000000 + tv.tv_usec;
 		loop_count++;
 
 		for(long i = 0; i < node_count; ++i)
@@ -317,7 +317,7 @@ long test_mmp(long total_size, long min_block_idx, long max_block_idx, long node
 					{
 						te[i]._alloc_time = now_time;
 
-						printf("--- alloc [%ld], idx: %ld.\n", te[i]._size, i);
+						printf("--- alloc [%ld], idx: %ld, duration: %ld.\n", te[i]._size, i, te[i]._usage_duration);
 
 //						mmp_freelist_profile(mp);
 					}
@@ -348,7 +348,7 @@ long test_mmp(long total_size, long min_block_idx, long max_block_idx, long node
 		}
 		if(rslt < 0) goto error_ret;
 loop_continue:
-		usleep(1000);
+		usleep(10);
 	}
 
 	mmp_del(mp);
