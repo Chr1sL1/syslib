@@ -210,7 +210,7 @@ int rb_insert(struct rbtree* t, struct rbnode* node)
 {
 	struct rbnode* hot = NULL;
 
-	if(!node || (unsigned long)node & 0x3 != 0) goto error_ret;
+	if(!node || ((unsigned long)node & 0x3) != 0) goto error_ret;
 	if(rb_search(t, node->key, &hot) != NULL) goto error_ret;
 
 	node->isblack = 0;

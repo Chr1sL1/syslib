@@ -622,7 +622,7 @@ struct mmpool* mmp_new(void* addr, long size, struct mmpool_config* cfg)
 	if(!addr) goto error_ret;
 
 	// chunk must be 8-byte aligned.
-	if(((unsigned long)addr) & 0x7 != 0) goto error_ret;
+	if((((unsigned long)addr) & 0x7) != 0) goto error_ret;
 	if(size < _block_size(cfg->min_block_index)) goto error_ret;
 	if(size > 0xFFFFFFFF) goto error_ret;
 

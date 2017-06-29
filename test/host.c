@@ -459,25 +459,25 @@ unsigned int at2t(unsigned v)
 	return (1 << (k + 1));
 }
 
-unsigned long test_asm(unsigned long val)
-{
-	unsigned long k = 100;
-
-	__asm__("addq %1, %0\n\t" : "+r"(k) : ""(val));
-
-	return k;
-}
-
-unsigned long test_asm_align8(unsigned long val)
-{
-	unsigned long ret;
-	__asm__("addq $8, %1\n\t"
-			"andq $-8, %1\n\t"
-			"movq %1, %0\n\t"
-			: "=r"(ret), "+r"(val));
-
-	return ret;
-}
+//unsigned long test_asm(unsigned long val)
+//{
+//	unsigned long k = 100;
+//
+//	__asm__("addq %1, %0\n\t" : "+r"(k) : ""(val));
+//
+//	return k;
+//}
+//
+//unsigned long test_asm_align8(unsigned long val)
+//{
+//	unsigned long ret;
+//	__asm__("addq $8, %1\n\t"
+//			"andq $-8, %1\n\t"
+//			"movq %1, %0\n\t"
+//			: "=r"(ret), "+r"(val));
+//
+//	return ret;
+//}
 
 long test_mmcpy(void)
 {
