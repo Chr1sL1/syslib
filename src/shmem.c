@@ -1,145 +1,215 @@
-#include <sys/mman.h>
-#include <sys/stat.h>
-#include <fcntl.h>
-#include <string.h>
-#include <unistd.h>
-#include <stdlib.h>
-#include <stdio.h>
 #include "shmem.h"
+#include <string.h>
+#include <stdlib.h>
+#include <sys/shm.h>
 
-struct shm_host_ptr* shmem_new(const char* name, size_t size)
+#define SHMM_MID_PAGE_THRESHOLD		(1 << 18)
+#define SHMM_HUGE_PAGE_THRESHOLD	(1 << 28)
+
+#define SHMM_TAG					(0x1234567890abcdef)
+
+#define SHM_HUGE_SHIFT				(26)
+#define SHM_HUGE_2MB				(21 << SHM_HUGE_SHIFT)
+#define SHM_HUGE_1GB				(30 << SHM_HUGE_SHIFT)
+
+struct _shmm_blk_head
 {
-	int __fd = 0;
-	struct shm_host_ptr* __ptr = NULL;
+	unsigned long _shmm_tag;
+	long _shmm_size;
+};
 
-	if(strlen(name) > SHMEM_NAME_LEN - 1)
-		goto error_end;
+struct _shmm_blk_impl
+{
+	struct shmm_blk _the_blk;
+	long _the_key;
+	long _fd;
+};
 
-	__fd = shm_open(name, O_RDWR | O_CREAT | O_EXCL, S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP|S_IROTH|S_IWOTH);
-	if(__fd < 0)
-		goto error_end;
-		
-	if(ftruncate(__fd, size + sizeof(struct _shm_addr)) < 0)
-		goto error_end;
-	
-	__ptr = malloc(sizeof(struct shm_host_ptr));
-	if(!__ptr)
-		goto error_end;
 
-	memset(__ptr, 0, sizeof(struct shm_host_ptr));
-	strncpy(__ptr->name, name, sizeof(__ptr->name));
+struct shmm_blk* shmm_new(const char* shmm_name, long channel, long size, long try_huge_page)
+{
+	int flag = 0;
+	void* ret_addr = 0;
+	struct _shmm_blk_head* sbh;
+	struct _shmm_blk_impl* sbi;
+	if(shmm_name == 0 || strlen(shmm_name) == 0 || channel <= 0 || size <= 0)
+		goto error_ret;
 
-	__ptr->_the_addr._addr = mmap(NULL, size + sizeof(struct _shm_addr),
-							PROT_READ | PROT_WRITE, MAP_SHARED, __fd, 0);
+	sbi = malloc(sizeof(struct _shmm_blk_impl));
+	if(sbi == 0) goto error_ret;
 
-	if(__ptr->_the_addr._addr == MAP_FAILED)
-		goto error_end;
-	
-	__ptr->_the_addr._size = size;
+	sbi->_the_key = ftok(shmm_name, channel);
+	if(sbi->_the_key < 0) goto error_ret;
 
-	if(write(__fd, __ptr, sizeof(struct _shm_addr)) != sizeof(struct _shm_addr))
-		goto error_end;
-	
-	__ptr->_the_addr._addr += sizeof(struct _shm_addr);
+	flag |= IPC_CREAT;
+	flag |= IPC_EXCL;
+	flag |= SHM_R;
+	flag |= SHM_W;
 
-	return __ptr;
-
-error_end:
-	perror("shmem_new error occured.");
-	if(__ptr)
+	if(try_huge_page)
 	{
-		shmem_destroy(__ptr);
-	}
-	else if(__fd > 0)
-	{
-		close(__fd);
+		if(size > SHMM_MID_PAGE_THRESHOLD)
+		{
+			flag |= SHM_HUGETLB;
+			if(size <= SHMM_HUGE_PAGE_THRESHOLD)
+				flag |= SHM_HUGE_2MB;
+			else
+				flag |= SHM_HUGE_1GB;
+		}
 	}
 
-	return NULL; 
+	sbi->_fd = shmget(sbi->_the_key, size + sizeof(struct _shmm_blk_head), flag);
+	if(sbi->_fd < 0)
+		goto error_ret;
+
+	ret_addr = shmat(sbi->_fd, 0, SHM_RND);
+	if(ret_addr == (void*)(-1))
+		goto error_ret;
+
+	sbh = (struct _shmm_blk_head*)ret_addr;
+	sbh->_shmm_tag = SHMM_TAG;
+	sbh->_shmm_size = size - sizeof(struct _shmm_blk_head);
+
+	sbi->_the_blk.addr = ret_addr + sizeof(struct _shmm_blk_head);
+	sbi->_the_blk.size = size;
+
+	return &sbi->_the_blk;
+error_ret:
+	if(sbi)
+	{
+		if(ret_addr)
+			shmdt(ret_addr);
+		free(sbi);
+	}
+	return 0;
 }
 
-void shmem_destroy(struct shm_host_ptr* ptr)
+static long _shmm_get_size(const char* shmm_name, long channel)
 {
-	if(ptr == NULL)
-		goto error_end;
+	int flag = 0;
+	int fd;
+	long key;
+	long size;
+	struct _shmm_blk_head* hd;
 
-	shm_unlink(ptr->name);
+	if(shmm_name == 0 || strlen(shmm_name) == 0 || channel <= 0)
+		goto error_ret;
 
-	if(ptr->_the_addr._addr == NULL)
-		goto error_end;
+	key = ftok(shmm_name, channel);
+	if(key < 0) goto error_ret;
 
-	if(munmap(ptr->_the_addr._addr - sizeof(struct _shm_addr), ptr->_the_addr._size + sizeof(struct _shm_addr)) < 0)
-		perror("munmap error.");
+	flag |= SHM_R;
 
-	if(ptr->_fd > 0)
-		close(ptr->_fd);
+	fd = shmget(key, sizeof(struct _shmm_blk_head), flag);
+	if(fd < 0)
+		goto error_ret;
 
-	free(ptr);
+	hd = (struct _shmm_blk_head*)shmat(fd, 0, SHM_RND);
+	if(hd == (void*)(-1) || hd->_shmm_tag != SHMM_TAG)
+		goto error_ret;
 
-error_end:
-	return;
+	size = hd->_shmm_size;
+
+	shmdt(hd);
+
+	return size;
+error_ret:
+	return -1;
 }
 
-struct shm_client_ptr* shmem_open(const char* name)
+struct shmm_blk* shmm_open(const char* shmm_name, long channel)
 {
-	int __fd = 0;
-	struct shm_client_ptr* __ptr = NULL;
+	int flag = 0;
+	long size;
+	void* ret_addr = 0;
+	struct _shmm_blk_impl* sbi;
+	struct _shmm_blk_head* sbh;
 
-	__fd = shm_open(name, O_RDWR, S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP|S_IROTH|S_IWOTH);
-	if(__fd < 0)
-		goto error_end;
+	if(shmm_name == 0 || strlen(shmm_name) == 0 || channel <= 0)
+		goto error_ret;
 
-	__ptr = malloc(sizeof(struct shm_client_ptr));
-	if(!__ptr)
-		goto error_end;
+//	size = _shmm_get_size(shmm_name, channel);
+//	if(size < 0) goto error_ret;
 
-	memset(__ptr, 0, sizeof(struct shm_client_ptr));
+	sbi = malloc(sizeof(struct _shmm_blk_impl));
+	if(sbi == 0) goto error_ret;
 
-	if(read(__fd, __ptr, sizeof(struct _shm_addr)) != sizeof(struct _shm_addr))
-		goto error_end;
+	sbi->_the_key = ftok(shmm_name, channel);
+	if(sbi->_the_key < 0) goto error_ret;
 
-	__ptr->_the_addr._addr = mmap(__ptr->_the_addr._addr - sizeof(struct _shm_addr),
-							__ptr->_the_addr._size + sizeof(struct _shm_addr),
-							PROT_READ | PROT_WRITE, MAP_SHARED, __fd, 0);
+//	if(size > SHMM_MID_PAGE_THRESHOLD)
+//	{
+//		flag |= SHM_HUGETLB;
+//		if(size <= SHMM_HUGE_PAGE_THRESHOLD)
+//			flag |= SHM_HUGE_2MB;
+//		else
+//			flag |= SHM_HUGE_1GB;
+//	}
 
-	if(__ptr->_the_addr._addr == MAP_FAILED)
-		goto error_end;
+	flag |= SHM_R;
+	flag |= SHM_W;
 
-	__ptr->_the_addr._addr += sizeof(struct _shm_addr);
+	sbi->_fd = shmget(sbi->_the_key, 0, flag);
+	if(sbi->_fd < 0)
+		goto error_ret;
 
-	return __ptr;
+	ret_addr = shmat(sbi->_fd, 0, SHM_RND);
+	if(ret_addr == (void*)(-1))
+		goto error_ret;
 
-error_end:
-	perror("shmem_open error occured.");
+	sbh = (struct _shmm_blk_head*)ret_addr;
+	if(sbh->_shmm_tag != SHMM_TAG || sbh->_shmm_size != size)
+		goto error_ret;
 
-	if(__ptr)
+	sbi->_the_blk.addr = ret_addr + sizeof(struct _shmm_blk_head);
+	sbi->_the_blk.size = size;
+
+	return &sbi->_the_blk;
+error_ret:
+	if(sbi)
 	{
-		shmem_close(__ptr);
-	}
-	else if(__fd > 0)
-	{
-		close(__fd);
-	}
+		if(ret_addr)
+			shmdt(ret_addr);
 
-	return NULL;
+		free(sbi);
+	}
+	return 0;
 }
 
-void shmem_close(struct shm_client_ptr* ptr)
+long shmm_close(struct shmm_blk* shmb)
 {
-	if(ptr == NULL)
-		goto error_end;
+	struct _shmm_blk_head* hd;
+	struct _shmm_blk_impl* sbi = (struct _shmm_blk_impl*)shmb;
+	if(sbi->_the_blk.addr == 0 || sbi->_the_blk.size == 0)
+		goto error_ret;
 
-	if(ptr->_the_addr._addr == NULL)
-		goto error_end;
+	hd = (struct _shmm_blk_head*)(sbi->_the_blk.addr - sizeof(struct _shmm_blk_head));
+	if(hd->_shmm_tag != SHMM_TAG || hd->_shmm_size <= 0)
+		goto error_ret;
 
-	if(munmap(ptr->_the_addr._addr - sizeof(struct _shm_addr), ptr->_the_addr._size + sizeof(struct _shm_addr)) < 0)
-		perror("munmap error.");
+	shmdt(hd);
 
-	if(ptr->_fd > 0)
-		close(ptr->_fd);
+	return 0;
+error_ret:
+	return -1;
+}
 
-	free(ptr);
+long shmm_del(struct shmm_blk* shmb)
+{
+	long rslt;
+	void* ret_addr;
+	struct _shmm_blk_impl* sbi = (struct _shmm_blk_impl*)shmb;
+	if(shmm_close(shmb) < 0)
+		goto error_ret;
 
-error_end:
-	return;
+	rslt = shmctl(sbi->_fd, IPC_RMID, 0);
+	if(rslt < 0)
+		goto error_ret;
+
+	free(sbi);
+	return 0;
+error_ret:
+	if(sbi)
+		free(sbi);
+	return -1;
 }

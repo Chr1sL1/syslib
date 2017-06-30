@@ -1,32 +1,17 @@
 #ifndef __shmem_h__
 #define __shmem_h__
 
-#define SHMEM_NAME_LEN	(64)
-
-struct _shm_addr
+struct shmm_blk
 {
-	void* _addr;
-	size_t _size;
+	void* addr;
+	long size;
 };
 
-struct shm_host_ptr
-{
-	struct _shm_addr _the_addr;
-	int _fd;
-	char name[SHMEM_NAME_LEN];
-};
+struct shmm_blk* shmm_new(const char* shmm_name, long channel, long size, long try_huge_page);
+struct shmm_blk* shmm_open(const char* shmm_name, long channel);
 
-struct shm_client_ptr
-{
-	struct _shm_addr _the_addr;
-	int _fd;
-};
-
-struct shm_host_ptr* shmem_new(const char* name, size_t size);
-void shmem_destroy(struct shm_host_ptr* ptr);
-
-struct shm_client_ptr* shmem_open(const char* name);
-void shmem_close(struct shm_client_ptr* ptr);
+long shmm_close(struct shmm_blk* shmb);
+long shmm_del(struct shmm_blk* shmb);
 
 // hahaha
 #endif

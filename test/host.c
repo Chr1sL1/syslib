@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <time.h>
 #include <sys/time.h>
+#include <errno.h>
 
 #include "shmem.h"
 #include "rbtree.h"
@@ -261,13 +262,22 @@ long test_mmp(long total_size, long min_block_idx, long max_block_idx, long node
 	struct mmpool* mp = 0;
 	struct mmp_test_entry te[node_count];
 	struct timeval tv;
-
 	struct mmpool_config cfg;
+
+	struct shmm_blk* sb = shmm_new("/home/chris/test.txt", 1, total_size, 0);
+	if(!sb)
+	{
+		perror(strerror(errno));
+		goto error_ret;
+	}
+
 	cfg.min_block_index = min_block_idx;
 	cfg.max_block_index = max_block_idx;
 
-	mmp_buf = malloc(total_size);
-	if(!mmp_buf) goto error_ret;
+	mmp_buf	= sb->addr;
+
+//	mmp_buf = malloc(total_size);
+//	if(!mmp_buf) goto error_ret;
 
 	mp = mmp_new(mmp_buf, total_size, &cfg);
 	if(!mp) goto error_ret;
@@ -353,11 +363,16 @@ loop_continue:
 	}
 
 	mmp_del(mp);
-
+	shmm_del(sb);
 	printf("test_mmp successed.\n");
 	return 0;
 error_ret:
-	mmp_check(mp);
+	if(mp)
+		mmp_check(mp);
+
+	if(sb)
+		shmm_del(sb);
+
 	printf("test_mmp failed.\n");
 	return -1;
 }
@@ -541,18 +556,36 @@ long test_qqq(long a, long b, long c)
 	return a + b + c;
 }
 
+long test_shmm(void)
+{
+	struct shmm_blk* sb = shmm_new("/home/chris/test.txt", 1, 256, 0);
+	if(!sb) goto error_ret;
+
+	shmm_del(sb);
+	return 0;
+error_ret:
+	perror(strerror(errno));
+	return -1;
+}
+
 int main(void)
 {
-	unsigned long i = test_asm_align8(10);
-	printf("%lu\n", i);
+//	unsigned long i = test_asm_align8(10);
+//	printf("%lu\n", i);
 
 	srandom(time(0));
 
-	test_mmcpy();
-//	test_mmp(1024 * 1024, 6, 10, 64);
+//	test_shmm();
+
+
+//	test_mmcpy();
+//
+//
 //	profile_mmpool();
 
 
+
+	test_mmp(1024 * 1024, 6, 10, 64);
 
 //	unsigned long r1 = rdtsc();
 //	unsigned int aaa = align_to_2power_top(11);
@@ -572,4 +605,6 @@ int main(void)
 //	test_lst();
 
 	return 0;
+error_ret:
+	return -1;
 }
