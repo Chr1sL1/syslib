@@ -263,8 +263,9 @@ long test_mmp(long total_size, long min_block_idx, long max_block_idx, long node
 	struct mmp_test_entry te[node_count];
 	struct timeval tv;
 	struct mmpool_config cfg;
+	struct shmm_blk* sbo = 0;
 
-	struct shmm_blk* sb = shmm_new("/home/chris/test.txt", 1, total_size, 0);
+	struct shmm_blk* sb = shmm_new("/dev/null", 1, total_size, 0);
 	if(!sb)
 	{
 		perror(strerror(errno));
@@ -273,6 +274,14 @@ long test_mmp(long total_size, long min_block_idx, long max_block_idx, long node
 
 	cfg.min_block_index = min_block_idx;
 	cfg.max_block_index = max_block_idx;
+
+	sbo = shmm_open("/dev/null", 1);
+	if(!sbo)
+	{
+		perror(strerror(errno));
+		goto error_ret;
+	}
+	shmm_close(sbo);
 
 	mmp_buf	= sb->addr;
 

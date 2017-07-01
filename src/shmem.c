@@ -68,7 +68,7 @@ struct shmm_blk* shmm_new(const char* shmm_name, long channel, long size, long t
 
 	sbh = (struct _shmm_blk_head*)ret_addr;
 	sbh->_shmm_tag = SHMM_TAG;
-	sbh->_shmm_size = size - sizeof(struct _shmm_blk_head);
+	sbh->_shmm_size = size;
 
 	sbi->_the_blk.addr = ret_addr + sizeof(struct _shmm_blk_head);
 	sbi->_the_blk.size = size;
@@ -120,16 +120,12 @@ error_ret:
 struct shmm_blk* shmm_open(const char* shmm_name, long channel)
 {
 	int flag = 0;
-	long size;
 	void* ret_addr = 0;
 	struct _shmm_blk_impl* sbi;
 	struct _shmm_blk_head* sbh;
 
 	if(shmm_name == 0 || strlen(shmm_name) == 0 || channel <= 0)
 		goto error_ret;
-
-//	size = _shmm_get_size(shmm_name, channel);
-//	if(size < 0) goto error_ret;
 
 	sbi = malloc(sizeof(struct _shmm_blk_impl));
 	if(sbi == 0) goto error_ret;
@@ -158,11 +154,11 @@ struct shmm_blk* shmm_open(const char* shmm_name, long channel)
 		goto error_ret;
 
 	sbh = (struct _shmm_blk_head*)ret_addr;
-	if(sbh->_shmm_tag != SHMM_TAG || sbh->_shmm_size != size)
+	if(sbh->_shmm_tag != SHMM_TAG)
 		goto error_ret;
 
 	sbi->_the_blk.addr = ret_addr + sizeof(struct _shmm_blk_head);
-	sbi->_the_blk.size = size;
+	sbi->_the_blk.size = sbh->_shmm_size;
 
 	return &sbi->_the_blk;
 error_ret:
