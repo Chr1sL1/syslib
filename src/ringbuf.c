@@ -3,11 +3,19 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define RING_BUF_TAG		(0x1212dbdb)
+#define RING_BUF_MAX_REF	(2)
+
+#pragma pack(1)
 struct _ring_buf_head
 {
-	volatile long r_offset;
-	volatile long w_offset;
+	volatile unsigned int _rb_tag;
+	volatile int _ref_count;
+	volatile long _size;
+	volatile long _r_offset;
+	volatile long _w_offset;
 };
+#pragma pack()
 
 struct _ring_buf_impl
 {
@@ -19,42 +27,105 @@ struct _ring_buf_impl
 	struct _ring_buf_head* _hd;
 };
 
-struct ring_buf* rbuf_new(void* addr, long size)
+long rbuf_new(void* addr, long size)
 {
-	struct _ring_buf_impl* rbi;
 	struct _ring_buf_head* hd;
 
 	if(addr == 0 || size <= sizeof(struct _ring_buf_head))
+		goto error_ret;
+
+	if(((unsigned long)addr & 0x7) != 0 || (size & 0x7) != 0)
+		goto error_ret;
+
+	hd = (struct _ring_buf_head*)addr;
+	if(hd->_rb_tag == RING_BUF_TAG || hd->_ref_count > 0)
+		goto error_ret;
+
+	hd->_rb_tag = RING_BUF_TAG;
+	hd->_size = size - sizeof(struct _ring_buf_head);
+	hd->_r_offset = 0;
+	hd->_w_offset = 0;
+	hd->_ref_count = 0;
+
+	return 0;
+error_ret:
+	return -1;
+}
+
+struct ring_buf* rbuf_open(void* addr)
+{
+	struct _ring_buf_impl* rbi = 0;
+	struct _ring_buf_head* hd;
+
+	if(addr == 0)
+		goto error_ret;
+
+	hd = (struct _ring_buf_head*)addr;
+	if(hd->_rb_tag != RING_BUF_TAG)
 		goto error_ret;
 
 	rbi = (struct _ring_buf_impl*)malloc(sizeof(struct _ring_buf_impl));
 	if(rbi == 0)
 		goto error_ret;
 
+	rbi->_hd = hd;
 	rbi->_the_buf.addr = addr;
-	rbi->_the_buf.size = size;
-
-	rbi->_hd = (struct _ring_buf_head*)align8(addr);
-
+	rbi->_the_buf.size = hd->_size + sizeof(struct _ring_buf_head);
 	rbi->_chunk_addr = (void*)(hd + 1);
-	rbi->_chunk_size = (size & (-0x8)) - sizeof(struct _ring_buf_head);
+	rbi->_chunk_size = hd->_size;
 
-	rbi->_hd->r_offset = 0;
-	rbi->_hd->w_offset = 0;
+	++hd->_ref_count;
 
 	return &rbi->_the_buf;
 error_ret:
+	if(rbi)
+		free(rbi);
 	return 0;
+
 }
 
-void rbuf_del(struct ring_buf* rbuf)
+long rbuf_close(struct ring_buf* rbuf)
 {
+	struct _ring_buf_head* hd;
+	struct _ring_buf_impl* rbi = (struct _ring_buf_impl*)rbuf;
+	if(rbi == 0)
+		goto error_ret;
+
+	hd = (struct _ring_buf_head*)rbi->_the_buf.addr;
+	if(hd->_rb_tag != RING_BUF_TAG || hd->_ref_count <= 0)
+		goto error_ret;
+
+	--hd->_ref_count;
+
+	free(rbi);
+
+	return 0;
+error_ret:
+	if(rbi)
+		free(rbi);
+	return -1;
+
+}
+
+long rbuf_del(struct ring_buf* rbuf)
+{
+	struct _ring_buf_head* hd;
 	struct _ring_buf_impl* rbi = (struct _ring_buf_impl*)rbuf;
 	if(rbi == 0) goto error_ret;
 
+	hd = (struct _ring_buf_head*)rbi->_the_buf.addr;
+	if(hd->_rb_tag != RING_BUF_TAG || hd->_ref_count > 0)
+		goto error_ret;
+
+	hd->_rb_tag = 0;
+
 	free(rbi);
+
+	return 0;
 error_ret:
-	return;
+	if(rbi)
+		free(rbi);
+	return -1;
 }
 
 long rbuf_write_block(struct ring_buf* rbuf, const void* data, long datalen)
@@ -65,8 +136,8 @@ long rbuf_write_block(struct ring_buf* rbuf, const void* data, long datalen)
 	struct _ring_buf_impl* rbi = (struct _ring_buf_impl*)rbuf;
 	if(rbi == 0 || rbi->_chunk_addr == 0) goto error_ret;
 
-	r_offset = rbi->_hd->r_offset;
-	w_offset = rbi->_hd->w_offset;
+	r_offset = rbi->_hd->_r_offset;
+	w_offset = rbi->_hd->_w_offset;
 
 	if(w_offset < r_offset)
 	{
@@ -100,7 +171,7 @@ long rbuf_write_block(struct ring_buf* rbuf, const void* data, long datalen)
 	goto error_ret;
 
 succ_ret:
-	rbi->_hd->w_offset = w_offset;
+	rbi->_hd->_w_offset = w_offset;
 	return 0;
 error_ret:
 	return -1;
@@ -114,10 +185,10 @@ long rbuf_read_block(struct ring_buf* rbuf, void* buf, long readlen)
 	struct _ring_buf_impl* rbi = (struct _ring_buf_impl*)rbuf;
 	if(rbi == 0 || rbi->_chunk_addr == 0) goto error_ret;
 
-	r_offset = rbi->_hd->r_offset;
-	w_offset = rbi->_hd->w_offset;
+	r_offset = rbi->_hd->_r_offset;
+	w_offset = rbi->_hd->_w_offset;
 
-	if(r_offset < w_offset)
+	if(r_offset <= w_offset)
 	{
 		remain = w_offset - r_offset;
 		if(remain < readlen) goto error_ret;
@@ -148,7 +219,7 @@ long rbuf_read_block(struct ring_buf* rbuf, void* buf, long readlen)
 	goto error_ret;
 
 succ_ret:
-	rbi->_hd->r_offset = r_offset;
+	rbi->_hd->_r_offset = r_offset;
 	return 0;
 error_ret:
 	return -1;

@@ -7,8 +7,11 @@ struct ring_buf
 	long size;
 };
 
-struct ring_buf* rbuf_new(void* addr, long size);
-void rbuf_del(struct ring_buf* rbuf);
+long rbuf_new(void* addr, long size);
+struct ring_buf* rbuf_open(void* addr);
+
+long rbuf_close(struct ring_buf* rbuf);
+long rbuf_del(struct ring_buf* rbuf);
 
 long rbuf_write_block(struct ring_buf* rb, const void* data, long datalen);
 long rbuf_read_block(struct ring_buf* rb, void* buf, long buflen);

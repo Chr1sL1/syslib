@@ -13,6 +13,7 @@
 #include "utask.h"
 #include "misc.h"
 #include "mmpool.h"
+#include "ringbuf.h"
 #include <signal.h>
 #include <unistd.h>
 #include <string.h>
@@ -565,12 +566,99 @@ long test_qqq(long a, long b, long c)
 	return a + b + c;
 }
 
+void shmm_sig_int(int sig)
+{
+	if(sig == SIGINT)
+		printf("caught SIGINT, pid: %d\n", getpid());
+}
+
 long test_shmm(void)
 {
-	struct shmm_blk* sb = shmm_new("/home/chris/test.txt", 1, 256, 0);
-	if(!sb) goto error_ret;
+	long rslt = 0;
+	pid_t pid = fork();
 
-	shmm_del(sb);
+	if(pid != 0)
+	{
+		int status = 0;
+		struct ring_buf* rb;
+		struct shmm_blk* sb = shmm_new("/dev/zero", 1, 256, 0);
+		if(!sb)
+		{
+			printf("main process exit with error: %d\n", errno);
+			exit(-1);
+		}
+
+		rslt = rbuf_new(sb->addr, sb->size);
+		if(rslt < 0)
+		{
+			printf("new ringbuf failed\n");
+			exit(-1);
+		}
+
+		rb = rbuf_open(sb->addr);
+		if(!rb)
+		{
+			printf("open ring buf failed\n");
+			exit(-1);
+		}
+
+		if(rbuf_write_block(rb, "1234567890", 10) < 0)
+		{
+			printf("write ringbuf failed\n");
+			exit(-1);
+		}
+
+		printf("main process wrote to ringbuf.\n");
+
+		wait(&status);
+
+		shmm_del(sb);
+
+		printf("main process exit with success.\n");
+		exit(0);
+	}
+	else
+	{
+		int sig;
+		sigset_t ss;
+		sigemptyset(&ss);
+		sigaddset(&ss, SIGINT);
+
+		printf("child process started with pid: %d.\n", getpid());
+
+		signal(SIGINT, shmm_sig_int);
+		sigwait(&ss, &sig);
+
+		char read_buf[2] = { 0 };
+		struct ring_buf* rb;
+		rslt = 0;
+		struct shmm_blk* sb = shmm_open("/dev/zero", 1);
+		if(!sb)
+		{
+			printf("child process exit with error: %d\n", errno);
+			exit(-1);
+		}
+
+		rb = rbuf_open(sb->addr);
+		if(!rb)
+		{
+			printf("open ring buf failed\n");
+			exit(-1);
+		}
+
+		while(rslt >= 0)
+		{
+			rslt = rbuf_read_block(rb, read_buf, 1);
+
+			if(rslt >= 0)
+				printf("read from ringbuf: %s\n", read_buf);
+		}
+
+		shmm_close(sb);
+		printf("child process exit with success.\n");
+		exit(0);
+	}
+
 	return 0;
 error_ret:
 	perror(strerror(errno));
@@ -584,7 +672,7 @@ int main(void)
 
 	srandom(time(0));
 
-//	test_shmm();
+	test_shmm();
 
 
 //	test_mmcpy();
@@ -594,7 +682,7 @@ int main(void)
 
 
 
-	test_mmp(1024 * 1024, 6, 10, 64);
+//	test_mmp(1024 * 1024, 6, 10, 64);
 
 //	unsigned long r1 = rdtsc();
 //	unsigned int aaa = align_to_2power_top(11);
