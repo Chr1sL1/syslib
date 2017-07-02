@@ -92,6 +92,11 @@ struct _chunk_head
 	unsigned long _reserved;
 };
 
+static inline struct _mmpool_impl* _conv_mmp(struct mmpool* pl)
+{
+	return (struct _mmpool_impl*)((unsigned long)pl - (unsigned long)&(((struct _mmpool_impl*)(0))->_pool));
+}
+
 static long _return_free_node_to_head(struct _mmpool_impl* mmpi, struct _block_head* hd);
 static long _return_free_node_to_tail(struct _mmpool_impl* mmpi, struct _block_head* hd);
 static long _take_free_node(struct _mmpool_impl* mmpi, long flh_idx, struct _block_head** bh);
@@ -706,7 +711,7 @@ error_ret:
 
 void mmp_del(struct mmpool* mmp)
 {
-	struct _mmpool_impl* mmpi = (struct _mmpool_impl*)mmp;
+	struct _mmpool_impl* mmpi = _conv_mmp(mmp);
 
 	if(mmpi)
 	{
@@ -723,7 +728,7 @@ void* mmp_alloc(struct mmpool* mmp, long payload_size)
 {
 	long rslt = 0;
 	long flh_idx = 0;
-	struct _mmpool_impl* mmpi = (struct _mmpool_impl*)mmp;
+	struct _mmpool_impl* mmpi = _conv_mmp(mmp);
 	struct _block_head* bh = 0;
 
 	if(payload_size <= 0 || payload_size > mmpi->_cfg._max_payload_size) goto error_ret;
@@ -758,7 +763,7 @@ long mmp_free(struct mmpool* mmp, void* p)
 {
 	long rslt = 0;
 	long max_block_size;
-	struct _mmpool_impl* mmpi = (struct _mmpool_impl*)mmp;
+	struct _mmpool_impl* mmpi = _conv_mmp(mmp);
 	struct _block_head* bh;
 	struct _block_tail* tl;
 
@@ -826,7 +831,7 @@ long mmp_check(struct mmpool* mmp)
 	long free_list_free_size = 0;
 
 	struct _block_head* h = 0;
-	struct _mmpool_impl* mmpi = (struct _mmpool_impl*)mmp;
+	struct _mmpool_impl* mmpi = _conv_mmp(mmp);
 
 	h = (struct _block_head*)(mmpi->_chunk_addr);
 
@@ -882,7 +887,7 @@ error_ret:
 
 long mmp_freelist_profile(struct mmpool* mmp)
 {
-	struct _mmpool_impl* mmpi = (struct _mmpool_impl*)mmp;
+	struct _mmpool_impl* mmpi = _conv_mmp(mmp);
 
 	for(long i = 0; i < mmpi->_cfg._free_list_count; ++i)
 	{

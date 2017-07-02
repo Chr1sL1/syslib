@@ -27,6 +27,11 @@ struct _ring_buf_impl
 	struct _ring_buf_head* _hd;
 };
 
+static inline struct _ring_buf_impl* _conv_rb(struct ring_buf* rb)
+{
+	return (struct _ring_buf_impl*)((unsigned long)rb - (unsigned long)&(((struct _ring_buf_impl*)(0))->_the_buf));
+}
+
 long rbuf_new(void* addr, long size)
 {
 	struct _ring_buf_head* hd;
@@ -84,10 +89,10 @@ error_ret:
 
 }
 
-long rbuf_close(struct ring_buf* rbuf)
+long rbuf_close(struct ring_buf** rbuf)
 {
 	struct _ring_buf_head* hd;
-	struct _ring_buf_impl* rbi = (struct _ring_buf_impl*)rbuf;
+	struct _ring_buf_impl* rbi = _conv_rb(*rbuf);
 	if(rbi == 0)
 		goto error_ret;
 
@@ -98,19 +103,21 @@ long rbuf_close(struct ring_buf* rbuf)
 	--hd->_ref_count;
 
 	free(rbi);
+	*rbuf = 0;
 
 	return 0;
 error_ret:
 	if(rbi)
 		free(rbi);
+	*rbuf = 0;
 	return -1;
 
 }
 
-long rbuf_del(struct ring_buf* rbuf)
+long rbuf_del(struct ring_buf** rbuf)
 {
 	struct _ring_buf_head* hd;
-	struct _ring_buf_impl* rbi = (struct _ring_buf_impl*)rbuf;
+	struct _ring_buf_impl* rbi = _conv_rb(*rbuf);
 	if(rbi == 0) goto error_ret;
 
 	hd = (struct _ring_buf_head*)rbi->_the_buf.addr;
@@ -120,11 +127,13 @@ long rbuf_del(struct ring_buf* rbuf)
 	hd->_rb_tag = 0;
 
 	free(rbi);
+	*rbuf = 0;
 
 	return 0;
 error_ret:
 	if(rbi)
 		free(rbi);
+	*rbuf = 0;
 	return -1;
 }
 
@@ -133,7 +142,7 @@ long rbuf_write_block(struct ring_buf* rbuf, const void* data, long datalen)
 	long r_offset, w_offset;
 	long remain;
 
-	struct _ring_buf_impl* rbi = (struct _ring_buf_impl*)rbuf;
+	struct _ring_buf_impl* rbi = _conv_rb(rbuf);
 	if(rbi == 0 || rbi->_chunk_addr == 0) goto error_ret;
 
 	r_offset = rbi->_hd->_r_offset;
@@ -182,7 +191,7 @@ long rbuf_read_block(struct ring_buf* rbuf, void* buf, long readlen)
 	long r_offset, w_offset;
 	long remain;
 
-	struct _ring_buf_impl* rbi = (struct _ring_buf_impl*)rbuf;
+	struct _ring_buf_impl* rbi = _conv_rb(rbuf);
 	if(rbi == 0 || rbi->_chunk_addr == 0) goto error_ret;
 
 	r_offset = rbi->_hd->_r_offset;

@@ -282,7 +282,7 @@ long test_mmp(long total_size, long min_block_idx, long max_block_idx, long node
 		perror(strerror(errno));
 		goto error_ret;
 	}
-	shmm_close(sbo);
+	shmm_close(&sbo);
 
 	mmp_buf	= sb->addr;
 
@@ -373,7 +373,7 @@ loop_continue:
 	}
 
 	mmp_del(mp);
-	shmm_del(sb);
+	shmm_del(&sb);
 	printf("test_mmp successed.\n");
 	return 0;
 error_ret:
@@ -381,7 +381,7 @@ error_ret:
 		mmp_check(mp);
 
 	if(sb)
-		shmm_del(sb);
+		shmm_del(&sb);
 
 	printf("test_mmp failed.\n");
 	return -1;
@@ -612,7 +612,8 @@ long test_shmm(void)
 
 		wait(&status);
 
-		shmm_del(sb);
+		rbuf_del(&rb);
+		shmm_del(&sb);
 
 		printf("main process exit with success.\n");
 		exit(0);
@@ -654,7 +655,9 @@ long test_shmm(void)
 				printf("read from ringbuf: %s\n", read_buf);
 		}
 
-		shmm_close(sb);
+		rbuf_close(&rb);
+		shmm_close(&sb);
+
 		printf("child process exit with success.\n");
 		exit(0);
 	}

@@ -12,11 +12,13 @@
 #define SHM_HUGE_2MB				(21 << SHM_HUGE_SHIFT)
 #define SHM_HUGE_1GB				(30 << SHM_HUGE_SHIFT)
 
+#pragma pack(1)
 struct _shmm_blk_head
 {
 	unsigned long _shmm_tag;
 	long _shmm_size;
 };
+#pragma pack()
 
 struct _shmm_blk_impl
 {
@@ -25,6 +27,10 @@ struct _shmm_blk_impl
 	long _fd;
 };
 
+static inline struct _shmm_blk_impl* _conv_blk(struct shmm_blk* blk)
+{
+	return (struct _shmm_blk_impl*)((unsigned long)blk - (unsigned long)&(((struct _shmm_blk_impl*)(0))->_the_blk));
+}
 
 struct shmm_blk* shmm_new(const char* shmm_name, long channel, long size, long try_huge_page)
 {
@@ -172,10 +178,10 @@ error_ret:
 	return 0;
 }
 
-long shmm_close(struct shmm_blk* shmb)
+long shmm_close(struct shmm_blk** shmb)
 {
 	struct _shmm_blk_head* hd;
-	struct _shmm_blk_impl* sbi = (struct _shmm_blk_impl*)shmb;
+	struct _shmm_blk_impl* sbi = _conv_blk(*shmb);
 	if(sbi->_the_blk.addr == 0 || sbi->_the_blk.size == 0)
 		goto error_ret;
 
@@ -185,16 +191,22 @@ long shmm_close(struct shmm_blk* shmb)
 
 	shmdt(hd);
 
+	free(sbi);
+	*shmb = 0;
+
 	return 0;
 error_ret:
+	if(sbi)
+		free(sbi);
+	*shmb = 0;
 	return -1;
 }
 
-long shmm_del(struct shmm_blk* shmb)
+long shmm_del(struct shmm_blk** shmb)
 {
 	long rslt;
 	void* ret_addr;
-	struct _shmm_blk_impl* sbi = (struct _shmm_blk_impl*)shmb;
+	struct _shmm_blk_impl* sbi = _conv_blk(*shmb);
 	if(shmm_close(shmb) < 0)
 		goto error_ret;
 
@@ -203,9 +215,12 @@ long shmm_del(struct shmm_blk* shmb)
 		goto error_ret;
 
 	free(sbi);
+	*shmb = 0;
+
 	return 0;
 error_ret:
 	if(sbi)
 		free(sbi);
+	*shmb = 0;
 	return -1;
 }
