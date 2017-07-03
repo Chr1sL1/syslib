@@ -139,15 +139,6 @@ struct shmm_blk* shmm_open(const char* shmm_name, long channel)
 	sbi->_the_key = ftok(shmm_name, channel);
 	if(sbi->_the_key < 0) goto error_ret;
 
-//	if(size > SHMM_MID_PAGE_THRESHOLD)
-//	{
-//		flag |= SHM_HUGETLB;
-//		if(size <= SHMM_HUGE_PAGE_THRESHOLD)
-//			flag |= SHM_HUGE_2MB;
-//		else
-//			flag |= SHM_HUGE_1GB;
-//	}
-
 	flag |= SHM_R;
 	flag |= SHM_W;
 

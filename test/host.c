@@ -14,11 +14,13 @@
 #include "misc.h"
 #include "mmpool.h"
 #include "ringbuf.h"
+#include "ipc.h"
 #include <signal.h>
 #include <unistd.h>
 #include <string.h>
 
 const char* share_memory_name = "test_shm_17x";
+static const char* alpha_beta = "abcdefghijlmnopqrstuvwxyz1234567890";
 
 int test_arr[100];
 
@@ -510,8 +512,6 @@ long test_mmcpy(void)
 	long rslt = 0;
 	long len = random() % 10000000 + 10000000;
 
-	static const char* alpha_beta
-		= "abcdefghijlmnopqrstuvwxyz1234567890";
 
 	char* src = malloc(len);
 	char* dst = malloc(len);
@@ -668,14 +668,126 @@ error_ret:
 	return -1;
 }
 
+#pragma pack(1)
+
+struct _ipc_msg_body
+{
+	unsigned char _msgsize;
+	char _buf[256];
+};
+
+#pragma pack()
+
+static long _run_ipc_host(void)
+{
+	long rslt = 0;
+
+	struct ipc_peer* pr = ipc_create(1, 1024, 0);
+	if(!pr)
+	{
+		printf("host create ipc peer failed.\n");
+		goto error_ret;
+	}
+
+	while(1)
+	{
+		struct _ipc_msg_body msg;
+		memset(&msg, 0, sizeof(struct _ipc_msg_body));
+
+		msg._msgsize = random() % 128;
+
+		for(int i = 0; i < msg._msgsize; ++i)
+		{
+			msg._buf[i] = alpha_beta[random() % strlen(alpha_beta)];
+		}
+
+		msg._msgsize += sizeof(unsigned char);
+
+		rslt = ipc_write(pr, &msg, msg._msgsize);
+		if(rslt < 0)
+		{
+			printf("host write failed.\n");
+		}
+		else
+		{
+			printf("--->>> host write: %s\n", msg._buf);
+		}
+
+		usleep(10);
+	}
+		
+	return 0;
+error_ret:
+	return -1;
+}
+
+static long _run_ipc_client(void)
+{
+	long rslt = 0;
+	usleep(100);
+	struct ipc_peer* pr = ipc_link(1);
+	if(!pr) goto error_ret;
+
+	while(1)
+	{
+		unsigned char msg_len;
+
+		rslt = ipc_read(pr, &msg_len, 1);
+		if(rslt < 0)
+		{
+			printf("client read msg size failed.\n");
+		}
+		else
+		{
+			char buf[256] = {0};
+			rslt = ipc_read(pr, buf, msg_len - 1);
+			if(rslt < 0)
+			{
+				printf("client read msg body failed.\n");
+			}
+			else
+			{
+				printf("<<<--- client read: %s\n", buf);
+			}
+		}
+		usleep(10);
+	}
+
+	return 0;
+error_ret:
+	return -1;
+}
+
+void test_ipc(void)
+{
+	long rslt = 0;
+//	_run_ipc_host();
+	pid_t pid = fork();
+
+	if(pid > 0)
+	{
+		printf("host started with pid: %d.\n", getpid());
+		rslt = _run_ipc_host();
+		wait(0);
+		exit(rslt);
+
+	}
+	else if(pid == 0)
+	{
+		printf("client started with pid: %d.\n", getpid());
+		rslt = _run_ipc_client();
+		exit(rslt);
+	}
+}
+
 int main(void)
 {
 //	unsigned long i = test_asm_align8(10);
 //	printf("%lu\n", i);
 
-	srandom(time(0));
+	srandom(1234);
 
-	test_shmm();
+	test_ipc();
 
 
 //	test_mmcpy();
