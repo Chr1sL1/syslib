@@ -675,9 +675,10 @@ struct mmpool* mmp_new(void* addr, long size, struct mmpool_config* cfg)
 	mmpi->_pool.mm_addr = addr;
 	mmpi->_pool.mm_size = size;
 
+	mmpi->_chunk_addr = addr + sizeof(struct _chunk_head);
 
-	mmpi->_chunk_addr = addr + sizeof(struct _chunk_head) + PAGE_SIZE;
-	mmpi->_chunk_addr = (void*)((unsigned long)mmpi->_chunk_addr & (unsigned long)(-PAGE_SIZE));
+//	mmpi->_chunk_addr = addr + sizeof(struct _chunk_head) + PAGE_SIZE;
+//	mmpi->_chunk_addr = (void*)((unsigned long)mmpi->_chunk_addr & (unsigned long)(-PAGE_SIZE));
 
 	if(mmpi->_chunk_addr < addr + sizeof(struct _chunk_head)) goto error_ret;
 

@@ -239,7 +239,7 @@ error_ret:
 	return 0;
 }
 
-struct rbnode* rb_search(struct rbtree* t, long key, struct rbnode** hot)
+struct rbnode* rb_search(struct rbtree* t, unsigned long key, struct rbnode** hot)
 {
 	struct rbnode* p = t->root;
 	struct rbnode* h = NULL;
@@ -474,7 +474,7 @@ error_ret:
 	return;
 }
 
-struct rbnode* rb_remove(struct rbtree* t, long key)
+struct rbnode* rb_remove(struct rbtree* t, unsigned long key)
 {
 	struct rbnode* r = NULL;
 	struct rbnode* x = t->root;
