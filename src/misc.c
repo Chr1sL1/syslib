@@ -30,3 +30,84 @@ succ_ret:
 error_ret:
 	return -1;
 }
+
+unsigned long align_to_2power_top(unsigned long val)
+{
+	unsigned long ret = 0;
+	if(val == 0)
+		return 0;
+
+	asm("bsrq	%1, %%rcx\n\t"
+		"bsfq	%1, %%rdx\n\t"
+		"leaq	0x1(%%rcx), %%rsi\n\t"
+		"cmpq	%%rcx, %%rdx\n\t"
+		"cmovneq	%%rsi, %%rcx\n\t"
+		"movq	$1, %0\n\t"
+		"salq	%%cl, %0"
+		:"=r"(ret)
+		:"r"(val));
+
+	return ret;
+}
+
+unsigned long align_to_2power_floor(unsigned long val)
+{
+	unsigned long ret = 0;
+	if(val == 0)
+		return 0;
+
+	asm("bsrq	%1, %%rcx\n\t"
+		"movq	$1, %0\n\t"
+		"salq	%%cl, %0"
+		:"=r"(ret)
+		:"r"(val));
+
+	return ret;
+}
+
+long is_2power(unsigned long val)
+{
+	unsigned long ret = 0;
+	if(val == 0)
+		return 1;
+
+	asm("bsrq	%1, %%rcx\n\t"
+		"bsfq	%1, %%rdx\n\t"
+		"cmpq	%%rcx, %%rdx\n\t"
+		"sete	%%al\n\t"
+		:"=a"(ret)
+		:"r"(val));
+
+	return ret;
+}
+
+unsigned long rdtsc(void)
+{
+	unsigned long th, tl;
+
+	asm volatile ("rdtsc":"=a"(tl),"=d"(th));
+
+	return (th << 32) + tl;
+}
+
+
+unsigned long log_2(unsigned long val)
+{
+	unsigned long ret;
+	asm("bsrq	%1, %0":"=r"(ret):"r"(val));
+
+	return ret;
+}
+
+
+unsigned long align8(unsigned long val)
+{
+	return ((val + 7) & ~7);
+
+}
+
+unsigned long align16(unsigned long val)
+{
+	return ((val + 15) & ~15);
+}
+

@@ -28,6 +28,13 @@ struct _block_tail
 	unsigned int _block_size;
 };
 
+struct _chunk_head
+{
+	unsigned long _chunck_label;
+	unsigned long _reserved;
+};
+
+
 #pragma pack()
 
 #define BLOCK_BIT_USED			1
@@ -84,12 +91,6 @@ struct _mmpool_impl
 	struct dlist _free_fln_list;
 	struct _free_list_node* _fln_pool;
 	struct _free_list_head* _flh;
-};
-
-struct _chunk_head
-{
-	unsigned long _chunck_label;
-	unsigned long _reserved;
 };
 
 static inline struct _mmpool_impl* _conv_mmp(struct mmpool* pl)

@@ -3,12 +3,13 @@
 
 unsigned long align_to_2power_top(unsigned long val);
 unsigned long align_to_2power_floor(unsigned long val);
+
 unsigned long rdtsc(void);
-long log_2(long val);
+unsigned long log_2(unsigned long val);
 long is_2power(unsigned long val);
 
-void* align8(void* val);
-void* align16(void* p);
+unsigned long align8(unsigned long val);
+unsigned long align16(unsigned long val);
 
 long quick_mmcpy_a(void* dst, void* src, long size);
 long quick_mmcpy_u(void* dst, void* src, long size);

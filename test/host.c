@@ -780,6 +780,8 @@ void test_ipc(void)
 	}
 }
 
+#define dbg(format, ...) printf(format, __VA_ARGS__)
+
 int main(void)
 {
 //	unsigned long i = test_asm_align8(10);
@@ -787,7 +789,9 @@ int main(void)
 
 	srandom(1234);
 
-	test_ipc();
+	dbg("%lu,%lu\n", is_2power(129), is_2power(64));
+
+//	test_ipc();
 
 
 //	test_mmcpy();
