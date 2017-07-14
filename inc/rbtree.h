@@ -23,7 +23,7 @@ struct rbtree
 typedef void (*order_function)(struct rbnode* node);
 
 void rb_fillnew(struct rbnode* node);
-int rb_insert(struct rbtree* t, struct rbnode* node);
+long rb_insert(struct rbtree* t, struct rbnode* node);
 struct rbnode* rb_search(struct rbtree* t, unsigned long key, struct rbnode** hot);
 struct rbnode* rb_remove(struct rbtree* t, unsigned long key);
 

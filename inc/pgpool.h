@@ -9,7 +9,7 @@ struct pgpool
 
 struct pgpool_config
 {
-	unsigned long max_pg_count;
+	unsigned long maxpg_count;
 };
 
 struct pgpool* pgp_new(void* addr, long size, struct pgpool_config* cfg);

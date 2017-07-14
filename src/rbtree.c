@@ -206,7 +206,7 @@ error_ret:
 	return;
 }
 
-int rb_insert(struct rbtree* t, struct rbnode* node)
+long rb_insert(struct rbtree* t, struct rbnode* node)
 {
 	struct rbnode* hot = NULL;
 
@@ -234,9 +234,9 @@ int rb_insert(struct rbtree* t, struct rbnode* node)
 	t->root->isblack = 1;
 
 	++t->size;
-	return 1;
-error_ret:
 	return 0;
+error_ret:
+	return -1;
 }
 
 struct rbnode* rb_search(struct rbtree* t, unsigned long key, struct rbnode** hot)
