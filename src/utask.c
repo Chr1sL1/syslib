@@ -6,7 +6,7 @@
 
 #define UTASK_MAGIC_NUM	 0x1234567887654321
 
-enum __utask_state
+enum __utask_impl_state
 {
 	uts_invalid = 0,
 
@@ -40,7 +40,7 @@ struct __reg_values
 	unsigned long r15;
 };
 
-struct __utask
+struct _utask_impl
 {
 	struct utask _utsk;
 
@@ -56,16 +56,16 @@ struct __utask
 	struct rbnode _rbnode;
 };
 
-extern void asm_run_task(struct __utask* tsk, void* udata);
-extern void asm_yield_task(struct __utask* tsk);
-extern void asm_resume_task(struct __utask* tsk);
+extern void asm_run_task(struct _utask_impl* tsk, void* udata);
+extern void asm_yield_task(struct _utask_impl* tsk);
+extern void asm_resume_task(struct _utask_impl* tsk);
 
-static struct __utask* _conv_task(struct utask* tsk)
+static struct _utask_impl* _conv_task(struct utask* tsk)
 {
-	struct __utask* itsk = 0;
+	struct _utask_impl* itsk = 0;
 	if(!tsk) goto error_ret;
 
-	itsk = (struct __utask*)tsk;
+	itsk = (struct _utask_impl*)tsk;
 	if(itsk->_magic_number != UTASK_MAGIC_NUM) goto error_ret;
 
 	return itsk;
@@ -73,19 +73,19 @@ error_ret:
 	return 0;
 }
 
-struct utask* make_task(void* stack_ptr, long stack_size, task_function tfunc)
+struct utask* utsk_create(void* stack_ptr, long stack_size, task_function tfunc)
 {
-	struct __utask* tsk = (struct __utask*)malloc(sizeof(struct __utask));
+	struct _utask_impl* tsk = (struct _utask_impl*)malloc(sizeof(struct _utask_impl));
 
 	if(!tsk) goto error_ret;
 	if(!stack_ptr) goto error_ret;
 	if(stack_size <= 0) goto error_ret;
 	if(!tfunc) goto error_ret;
 
-	memset(tsk, 0, sizeof(struct __utask));
-	tsk->_utsk._stack = stack_ptr;
-	tsk->_utsk._stack_size = stack_size;
-	tsk->_utsk._func = tfunc;
+	memset(tsk, 0, sizeof(struct _utask_impl));
+	tsk->_utsk.stk = stack_ptr;
+	tsk->_utsk.stk_size = stack_size;
+	tsk->_utsk.tsk_func = tfunc;
 	tsk->_magic_number = UTASK_MAGIC_NUM;
 	tsk->_task_state = uts_inited;
 
@@ -94,9 +94,9 @@ error_ret:
 	return 0;
 }
 
-void del_task(struct utask* tsk)
+void utsk_destroy(struct utask* tsk)
 {
-	struct __utask* t = _conv_task(tsk);
+	struct _utask_impl* t = _conv_task(tsk);
 	if(!t) goto error_ret;
 
 	free(t);
@@ -104,9 +104,9 @@ error_ret:
 	return;
 }
 
-int run_task(struct utask* tsk, void* udata)
+int utsk_run(struct utask* tsk, void* udata)
 {
-	struct __utask* itsk = _conv_task(tsk);
+	struct _utask_impl* itsk = _conv_task(tsk);
 	if(itsk->_task_state != uts_inited) goto error_ret;
 
 	itsk->_task_state = uts_running; 
@@ -118,9 +118,9 @@ error_ret:
 	return 0;
 }
 
-int yield_task(struct utask* tsk)
+int utsk_yield(struct utask* tsk)
 {
-	struct __utask* itsk = _conv_task(tsk);
+	struct _utask_impl* itsk = _conv_task(tsk);
 	if(itsk->_task_state != uts_running) goto error_ret;
 
 	itsk->_task_state = uts_waiting; 
@@ -132,9 +132,9 @@ error_ret:
 	return 0;
 }
 
-int resume_task(struct utask* tsk)
+int utsk_resume(struct utask* tsk)
 {
-	struct __utask* itsk = _conv_task(tsk);
+	struct _utask_impl* itsk = _conv_task(tsk);
 	if(itsk->_task_state != uts_waiting) goto error_ret;
 
 	itsk->_task_state = uts_running; 

@@ -8,18 +8,18 @@ typedef void (*task_function)(struct utask*, void*);
 
 struct utask
 {
-	void* _stack;
-	long _stack_size;
-	task_function _func;
+	void* stk;
+	long stk_size;
+	task_function tsk_func;
 };
 
 // for temp use
-struct utask* make_task(void* stackptr, long stacksize, task_function tfunc);
-void del_task(struct utask* tsk);
+struct utask* utsk_create(void* stackptr, long stacksize, task_function tfunc);
+void utsk_destroy(struct utask* tsk);
 //
 
-int run_task(struct utask* tsk, void* udata);
-int yield_task(struct utask* tsk);
-int resume_task(struct utask* tsk);
+int utsk_run(struct utask* tsk, void* udata);
+int utsk_yield(struct utask* tsk);
+int utsk_resume(struct utask* tsk);
 
 #endif	// __utask_h__

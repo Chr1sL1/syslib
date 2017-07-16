@@ -21,15 +21,22 @@ struct _chunk_header
 
 #pragma pack()
 
-struct _free_list_node
+struct _pg_node
 {
 	union
 	{
-		struct dlnode _lst_node;
-		struct dlnode _free_fln_node;
+		struct dlnode _free_pgn_node;
+		struct dlnode _fln_node;
 	};
 
-	void* _payload_addr;
+	struct rbnode _rb_node;
+
+	union
+	{
+		void* _payload_addr;
+		unsigned using : 2;
+	};
+
 	long _pg_count;
 };
 
@@ -38,35 +45,6 @@ struct _free_list_head
 	struct dlist _free_list;
 	long _op_count;
 };
-
-//struct _hash_list_node
-//{
-//	union
-//	{
-//		struct dlnode _lst_node;
-//		struct dlnode _free_hln_node;
-//	};
-//	unsigned long _pg_addr;
-//	long _pg_count;
-//};
-
-struct _rb_tree_node
-{
-	union
-	{
-		struct rbnode _rb_node;
-		struct dlnode _free_rbl_node;
-	};
-
-	long _pg_count;
-};
-
-//struct _hash_list_head
-//{
-//	struct dlist _hash_list;
-//	long _node_count;
-//};
-//
 
 struct _pgp_cfg
 {
@@ -82,18 +60,12 @@ struct _pgpool_impl
 	void* _chunk_addr;
 	long _chunk_pgcount;
 
-	struct dlist _free_fln_list;
-	struct _free_list_node* _fln_pool;
+	struct rbtree _pgn_tree;
 	struct _free_list_head* _flh;
 
-	struct dlist _free_rbn_list;
-	struct rbtree _allocated_tree;
-	struct _rb_tree_node* _rbn_pool;
-
-//	struct _hash_list_node* _hln_pool;
-//	struct _hash_list_head _hlh[HASH_COUNT];
+	struct dlist _free_pgn_list;
+	struct _pg_node* _pgn_pool;
 };
-
 
 static inline unsigned long _align_pg(unsigned long addr)
 {
@@ -110,126 +82,93 @@ static inline struct _pgpool_impl* _conv_impl(struct pgpool* pgp)
 	return (struct _pgpool_impl*)((void*)pgp - (unsigned long)(&((struct _pgpool_impl*)(0))->_the_pool));
 }
 
-static inline struct _free_list_node* _conv_fln(struct dlnode* dln)
+static inline struct _pg_node* _conv_rbn(struct rbnode* rbn)
 {
-	return (struct _free_list_node*)((void*)dln - (unsigned long)(&((struct _free_list_node*)(0))->_lst_node));
+	return (struct _pg_node*)((void*)rbn - (unsigned long)(&((struct _pg_node*)(0))->_rb_node));
 }
 
-static inline struct _free_list_node* _conv_free_fln(struct dlnode* dln)
+static inline struct _pg_node* _conv_fln(struct dlnode* fln)
 {
-	return (struct _free_list_node*)((void*)dln - (unsigned long)(&((struct _free_list_node*)(0))->_free_fln_node));
+	return (struct _pg_node*)((void*)fln - (unsigned long)(&((struct _pg_node*)(0))->_fln_node));
 }
 
-static inline struct _rb_tree_node* _conv_rbn(struct rbnode* rbn)
+static inline struct _pg_node* _conv_free_pgn(struct dlnode* fln)
 {
-	return (struct _rb_tree_node*)((void*)rbn - (unsigned long)(&((struct _rb_tree_node*)(0))->_rb_node));
+	return (struct _pg_node*)((void*)fln - (unsigned long)(&((struct _pg_node*)(0))->_free_pgn_node));
 }
 
-static inline struct _rb_tree_node* _conv_free_rbn(struct dlnode* dln)
+static inline struct _pg_node* _fetch_free_pgn(struct _pgpool_impl* pgpi)
 {
-	return (struct _rb_tree_node*)((void*)dln - (unsigned long)(&((struct _rb_tree_node*)(0))->_free_rbl_node));
+	struct dlnode* dln = lst_pop_front(&pgpi->_free_pgn_list);
+	struct _pg_node* pgn = _conv_free_pgn(dln);
+
+	return pgn;
 }
 
-static inline struct _free_list_node* _fetch_free_fln(struct _pgpool_impl* pgpi)
+static inline long _return_free_pgn(struct _pgpool_impl* pgpi, struct _pg_node* pgn)
 {
-	struct dlnode* dln = lst_pop_front(&pgpi->_free_fln_list);
-	struct _free_list_node* fln = _conv_free_fln(dln);
-
-	return fln;
+	return lst_push_front(&pgpi->_free_pgn_list, &pgn->_free_pgn_node);
 }
 
-static inline struct _rb_tree_node* _fetch_free_rbn(struct _pgpool_impl* pgpi)
+static inline struct _pg_node* _fetch_fln(struct _pgpool_impl* pgpi, long flh_idx)
 {
-	struct dlnode* dln = lst_pop_front(&pgpi->_free_rbn_list);
-	struct _rb_tree_node* hln = _conv_free_rbn(dln);
-
-	return hln;
+	struct dlnode* fln = lst_pop_front(&pgpi->_flh[flh_idx]._free_list);
+	return _conv_fln(fln);
 }
 
-static inline long _return_free_fln(struct _pgpool_impl* pgpi, struct _free_list_node* fln)
+static inline long _link_fln(struct _pgpool_impl* pgpi, struct _pg_node* pgn)
 {
-	fln->_payload_addr = 0;
-	fln->_pg_count = 0;
-
-	return lst_push_front(&pgpi->_free_fln_list, &fln->_free_fln_node);
+	long flh_idx = log_2(pgn->_pg_count);
+	return lst_push_front(&pgpi->_flh[flh_idx]._free_list, &pgn->_fln_node);
 }
 
-static inline long _return_free_rtn(struct _pgpool_impl* pgpi, struct _rb_tree_node* rtn)
+static inline long _unlink_fln(struct _pgpool_impl* pgpi, struct _pg_node* pgn)
 {
-	return lst_push_front(&pgpi->_free_rbn_list, &rtn->_free_rbl_node);
+	long flh_idx = log_2(pgn->_pg_count);
+	return lst_remove(&pgpi->_flh[flh_idx]._free_list, &pgn->_fln_node);
 }
 
-static inline long _insert_rtn(struct _pgpool_impl* pgpi, void* pg_addr, long pg_count)
+static inline long _link_rbn(struct _pgpool_impl* pgpi, struct _pg_node* pgn)
 {
-	long rslt = 0;
-	unsigned long rb_key = (unsigned long)pg_addr;
-	struct _rb_tree_node* rtn = _fetch_free_rbn(pgpi);
+	rb_fillnew(&pgn->_rb_node);
+	pgn->_rb_node.key = (unsigned long)pgn->_payload_addr;
 
-	rtn->_rb_node.key = rb_key;
-	rtn->_pg_count = pg_count;
-
-	rb_fillnew(&rtn->_rb_node);
-	rslt = rb_insert(&pgpi->_allocated_tree, &rtn->_rb_node);
-	if(rslt < 0) goto error_ret;
-
-	return 0;
-error_ret:
-	return -1;
+	return rb_insert(&pgpi->_pgn_tree, &pgn->_rb_node);
 }
 
-static inline struct _free_list_node* _remove_rtn(struct _pgpool_impl* pgpi, void* pg_addr)
+static inline void _unlink_rbn(struct _pgpool_impl* pgpi, struct _pg_node* pgn)
 {
-	long rslt = 0;
-	unsigned long rb_key = (unsigned long)pg_addr;
-	struct _rb_tree_node* rtn;
-	struct _free_list_node* fln;
+	rb_remove_node(&pgpi->_pgn_tree, &pgn->_rb_node);
+}
 
-	struct rbnode* rbn = rb_remove(&pgpi->_allocated_tree, rb_key);
+static inline struct _pg_node* _pgn_from_payload(struct _pgpool_impl* pgpi, void* payload)
+{
+	struct rbnode* hot;
+	struct rbnode* rbn;
+
+	rbn = rb_search(&pgpi->_pgn_tree, (unsigned long)payload, &hot);
 	if(!rbn) goto error_ret;
 
-	rtn = _conv_rbn(rbn);
-
-	fln = _fetch_free_fln(pgpi);
-	if(!fln) goto error_ret;
-
-	fln->_payload_addr = pg_addr;
-	fln->_pg_count = rtn->_pg_count;
-
-	rslt = _return_free_rtn(pgpi, rtn);
-	if(rslt < 0) goto error_ret;
-
-	return fln;
+	return _conv_rbn(rbn);
 error_ret:
 	return 0;
 }
 
-static inline struct _free_list_node* _fetch_fln(struct _pgpool_impl* pgpi, long flh_idx)
-{
-	struct dlnode* dln = lst_pop_front(&pgpi->_flh[flh_idx]._free_list);
-	return _conv_fln(dln);
-}
-
-static inline long _link_fln(struct _pgpool_impl* pgpi, struct _free_list_node* fln)
-{
-	long flh_idx = log_2(fln->_pg_count);
-	return lst_push_front(&pgpi->_flh[flh_idx]._free_list, &fln->_lst_node);
-}
-
-static long _take_free_node(struct _pgpool_impl* pgpi, long pg_count, struct _free_list_node** fln)
+static long _take_free_node(struct _pgpool_impl* pgpi, long pg_count, struct _pg_node** pgn)
 {
 	long rslt;
 	long flh_idx = log_2(pg_count);
 	long idx = flh_idx;
 
 	struct dlnode* dln;
-	struct _free_list_node* candi_fln = 0;
+	struct _pg_node* candi_pgn = 0;
 
-	*fln = 0;
+	*pgn = 0;
 
 	if(is_2power(pg_count) && !lst_empty(&pgpi->_flh[idx]._free_list))
 	{
-		*fln = _fetch_fln(pgpi, idx);
-		if(!(*fln)) goto error_ret;
+		*pgn = _fetch_fln(pgpi, idx);
+		if(!(*pgn) || (*pgn)->using) goto error_ret;
 
 		goto succ_ret;
 	}
@@ -243,30 +182,49 @@ static long _take_free_node(struct _pgpool_impl* pgpi, long pg_count, struct _fr
 
 		while(dln != &pgpi->_flh[idx]._free_list.tail)
 		{
-			candi_fln = _conv_fln(dln);
-			if(candi_fln->_pg_count >= pg_count)
+			candi_pgn = _conv_fln(dln);
+			if(candi_pgn->_pg_count >= pg_count)
 			{
-				lst_remove(&pgpi->_flh[idx]._free_list, dln);
+				if(candi_pgn->using) goto error_ret;
+				_unlink_fln(pgpi, candi_pgn);
 				break;
 			}
 		}
 	}
 
-	if(!candi_fln) goto error_ret;
+	if(!candi_pgn) goto error_ret;
 
-	*fln = candi_fln;
+	*pgn = candi_pgn;
 
-	if((candi_fln->_pg_count >> 1) >= pg_count)
+	if(candi_pgn->_pg_count > pg_count)
 	{
-		struct _free_list_node* new_fln = _fetch_free_fln(pgpi);
-		new_fln->_payload_addr = candi_fln->_payload_addr + pg_count * PG_SIZE;
-		new_fln->_pg_count = candi_fln->_pg_count - pg_count;
+		struct _pg_node* new_pgn = _fetch_free_pgn(pgpi);
+		new_pgn->_payload_addr = candi_pgn->_payload_addr + pg_count * PG_SIZE;
+		new_pgn->_pg_count = candi_pgn->_pg_count - pg_count;
+		candi_pgn->_pg_count -= pg_count;
 
-		_link_fln(pgpi, new_fln);
-		candi_fln->_pg_count -= pg_count;
+		_link_fln(pgpi, new_pgn);
+		_link_rbn(pgpi, new_pgn);
 	}
 
 succ_ret:
+	return 0;
+error_ret:
+	return -1;
+}
+
+static long _return_free_node(struct _pgpool_impl* pgpi, struct _pg_node* pgn)
+{
+	long rslt;
+	struct rbnode* parent;
+
+	parent = rb_parent(&pgn->_rb_node);
+	if(parent)
+	{
+		struct _pg_node* parent_pgn = _conv_rbn(parent);
+
+	}
+
 	return 0;
 error_ret:
 	return -1;
@@ -284,19 +242,16 @@ static long _pgp_init_chunk(struct _pgpool_impl* pgpi)
 
 	while(remain_count > 0)
 	{
-		struct dlnode* dln = lst_pop_front(&pgpi->_free_fln_list);
-		struct _free_list_node* fln = _conv_fln(dln);
+		struct _pg_node* pgn = _fetch_free_pgn(pgpi);
 
-		fln->_payload_addr = pg;
+		pgn->_payload_addr = pg;
 		if(remain_count >= pgpi->_cfg.maxpg_count)
-			fln->_pg_count = pgpi->_cfg.maxpg_count;
+			pgn->_pg_count = pgpi->_cfg.maxpg_count;
 		else
-			fln->_pg_count = remain_count;
+			pgn->_pg_count = remain_count;
 
-		flh_idx = log_2(fln->_pg_count);
-
-		lst_clr(&fln->_lst_node);
-		rslt = lst_push_back(&pgpi->_flh[flh_idx]._free_list, &fln->_lst_node);
+		_link_fln(pgpi, pgn);
+		_link_rbn(pgpi, pgn);
 
 		if(rslt < 0) goto error_ret;
 
@@ -329,8 +284,7 @@ struct pgpool* pgp_new(void* addr, long size, struct pgpool_config* cfg)
 	pgpi = (struct _pgpool_impl*)malloc(sizeof(struct _pgpool_impl));
 	if(!pgpi) goto error_ret;
 
-	lst_new(&pgpi->_free_fln_list);
-	lst_new(&pgpi->_free_rbn_list);
+	lst_new(&pgpi->_free_pgn_list);
 
 	pgpi->_the_pool.addr = addr;
 	pgpi->_the_pool.size = size;
@@ -340,22 +294,16 @@ struct pgpool* pgp_new(void* addr, long size, struct pgpool_config* cfg)
 	pgpi->_chunk_addr = (void*)_align_pg((unsigned long)addr + sizeof(struct _chunk_header));
 	pgpi->_chunk_pgcount = (size - (pgpi->_chunk_addr - addr)) / PG_SIZE;
 
-	pgpi->_fln_pool = malloc(sizeof(struct _free_list_node) * pgpi->_chunk_pgcount);
-	if(!pgpi->_fln_pool) goto error_ret;
-
-	pgpi->_rbn_pool = malloc(sizeof(struct _rb_tree_node) * pgpi->_chunk_pgcount);
-	if(!pgpi->_rbn_pool) goto error_ret;
+	pgpi->_pgn_pool = malloc(sizeof(struct _pg_node) * pgpi->_chunk_pgcount);
+	if(!pgpi->_pgn_pool) goto error_ret;
 
 	pgpi->_flh = malloc(sizeof(struct _free_list_head) * pgpi->_cfg.freelist_count);
 	if(!pgpi->_flh) goto error_ret;
 
 	for(long i = 0; i < pgpi->_chunk_pgcount; ++i)
 	{
-		lst_clr(&pgpi->_fln_pool[i]._lst_node);
-		lst_push_back(&pgpi->_free_fln_list, &pgpi->_fln_pool[i]._free_fln_node);
-
-		lst_clr(&pgpi->_rbn_pool[i]._free_rbl_node);
-		lst_push_back(&pgpi->_free_rbn_list, &pgpi->_rbn_pool[i]._free_rbl_node);
+		lst_clr(&pgpi->_pgn_pool[i]._free_pgn_node);
+		lst_push_back(&pgpi->_free_pgn_list, &pgpi->_pgn_pool[i]._free_pgn_node);
 	}
 
 	hd = pgpi->_chunk_addr - sizeof(struct _chunk_header);
@@ -382,10 +330,8 @@ void pgp_del(struct pgpool* pgp)
 	{
 		if(pgpi->_flh)
 			free(pgpi->_flh);
-		if(pgpi->_rbn_pool)
-			free(pgpi->_rbn_pool);
-		if(pgpi->_fln_pool)
-			free(pgpi->_fln_pool);
+		if(pgpi->_pgn_pool)
+			free(pgpi->_pgn_pool);
 
 		free(pgpi);
 	}
@@ -396,36 +342,36 @@ void* pgp_alloc(struct pgpool* pgp, long size)
 {
 	void* payload;
 	long flh_idx, rslt, pg_count;
-	struct _free_list_node* fln;
+	struct _pg_node* pgn;
 	struct _pgpool_impl* pgpi = _conv_impl(pgp);
 
 	pg_count = (size + PG_SIZE - 1) >> PG_SIZE_SHIFT;
 
-	rslt = _take_free_node(pgpi, pg_count, &fln);
-	if(rslt < 0 || !fln) goto error_ret;
+	rslt = _take_free_node(pgpi, pg_count, &pgn);
+	if(rslt < 0 || !pgn) goto error_ret;
 
-	rslt = _insert_rtn(pgpi, fln->_payload_addr, fln->_pg_count);
-	if(rslt < 0) goto error_ret;
-
-	payload = fln->_payload_addr;
-
-	_return_free_fln(pgpi, fln);
+	payload = pgn->_payload_addr;
+	pgn->using = 1;
 
 	return payload;
 error_ret:
 	return 0;
 }
 
-long pgp_free(struct pgpool* pgp, void* p)
+long pgp_free(struct pgpool* pgp, void* payload)
 {
 	long rslt;
-
+	struct _pg_node* pgn;
 	struct _pgpool_impl* pgpi = _conv_impl(pgp);
 
-	struct _free_list_node* fln = _remove_rtn(pgpi, p);
-	if(!fln) goto error_ret;
+	if(((unsigned long)payload & (PG_SIZE - 1)) != 0)
+		goto error_ret;
 
-	rslt = _link_fln(pgpi, fln);
+	pgn = _pgn_from_payload(pgpi, payload);
+	if(!pgn || !pgn->using)
+		goto error_ret;
+
+	rslt = _return_free_node(pgpi, pgn);
 	if(rslt < 0) goto error_ret;
 
 	return 0;

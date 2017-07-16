@@ -22,7 +22,7 @@
 const char* share_memory_name = "test_shm_17x";
 static const char* alpha_beta = "abcdefghijlmnopqrstuvwxyz1234567890";
 
-int test_arr[100];
+int test_arr[10];
 
 char* mmp_buf;
 
@@ -61,7 +61,7 @@ void print_node(struct rbnode* node)
 		struct rbnode* lc = node->lchild;
 		struct rbnode* rc = node->rchild;
 
-//		printf("%d(%d)[%d,%d] ", node->key, node->isblack, lc ? lc->key:0, rc ? rc->key:0);
+		printf("%lu(%d)[%lu,%lu] ", node->key, node->isblack, lc ? lc->key:0, rc ? rc->key:0);
 	}
 
 }
@@ -102,11 +102,11 @@ void test_rbtree(void)
 		r1 = rdtsc();
 		rb_insert(&test_tree, node);
 		r2 = rdtsc();
-		printf("rbinsert: %lu cycles.", r2 - r1);
+		printf("rbinsert: %lu cycles.\n", r2 - r1);
 
-//		pre_order(test_tree.root, print_node);
-//		printf("\n");
-//		in_order(test_tree.root, print_node);
+		pre_order(test_tree.root, print_node);
+		printf("\n");
+		in_order(test_tree.root, print_node);
 		printf("\n---size %d---\n", test_tree.size);
 	}
 
@@ -114,9 +114,9 @@ void test_rbtree(void)
 	printf("insert elapse: %ld.\n", (long)tv_end.tv_usec - (long)tv_begin.tv_usec);
 	printf("rooooooooooooooooooot:%ld\n", test_tree.root->key);
 
-//	printf("traverse: \n");
-//	rb_traverse(&test_tree, print_node);	
-//	printf("\n");
+	printf("traverse: \n");
+	rb_traverse(&test_tree, print_node);	
+	printf("\n");
 
 	random_shuffle(test_arr, test_arr_count);
 
@@ -124,16 +124,17 @@ void test_rbtree(void)
 
 	for(int i = 0; i < test_arr_count; i++)
 	{
+		printf("remove key: %d.\n", test_arr[i]);
 		r1 = rdtsc();
 		struct rbnode* node = rb_remove(&test_tree, test_arr[i]);
 		r2 = rdtsc();
-		printf("rbremove: %lu cycles.", r2 - r1);
+		printf("rbremove: %lu cycles.\n", r2 - r1);
 
 		if(node)
 		{
-//			pre_order(test_tree.root, print_node);
-//			printf("\n");
-//			in_order(test_tree.root, print_node);
+			pre_order(test_tree.root, print_node);
+			printf("\n");
+			in_order(test_tree.root, print_node);
 			printf("\n---size %d---\n", test_tree.size);
 
 			free(node);
@@ -202,7 +203,7 @@ void tfun(struct utask* t, void* p)
 //		printf("arr[i] = %d\n", test_arr[i]);
 
 		if(i % 2 == 0)
-			yield_task(t);
+			utsk_yield(t);
 
 //		sleep(1);
 	}
@@ -212,7 +213,7 @@ void test_task(void)
 {
 	unsigned long r1 = 0, r2 = 0;
 	void* ustack = malloc(1024);
-	struct utask* tsk = make_task(ustack, 1024, tfun);
+	struct utask* tsk = utsk_create(ustack, 1024, tfun);
 	if(!tsk) goto error_ret;
 
 	for(int i = 0; i < sizeof(test_arr) / sizeof(int); i++)
@@ -221,7 +222,7 @@ void test_task(void)
 	}
 
 	r1 = rdtsc();
-	run_task(tsk, 0);
+	utsk_run(tsk, 0);
 	r2 = rdtsc();
 	printf("runtask: %lu cycles.\n", r2 - r1);
 
@@ -231,7 +232,7 @@ void test_task(void)
 		if(i % 3 == 0)
 		{
 			r1 = rdtsc();
-			resume_task(tsk);
+			utsk_resume(tsk);
 			r2 = rdtsc();
 			printf("resume: %lu cycles.\n", r2 - r1);
 		}
@@ -791,6 +792,7 @@ int main(void)
 
 	dbg("%lu,%lu\n", is_2power(129), is_2power(64));
 
+
 //	test_ipc();
 
 
@@ -816,7 +818,7 @@ int main(void)
 //	printf("cycle = %lu\n", r2 - r1);
 //
 //
-//	test_rbtree(); 
+	test_rbtree(); 
 //	test_task();
 //	test_lst();
 
