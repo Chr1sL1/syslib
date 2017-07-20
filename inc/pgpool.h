@@ -20,5 +20,8 @@ void pgp_del(struct pgpool* up);
 void* pgp_alloc(struct pgpool* up, long size);
 long pgp_free(struct pgpool* up, void* p);
 
+
+void pgp_check(struct pgpool* up);
+
 #endif
 

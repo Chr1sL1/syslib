@@ -477,23 +477,13 @@ error_ret:
 	return 0;
 }
 
-static struct rbnode* _rb_min(struct rbnode* x)
-{
-	while(l_child(x))
-	{
-		x = l_child(x);
-	}
-
-	return x;
-}
-
-static struct rbnode* _rb_succ(struct rbnode* x)
+struct rbnode* rb_succ(struct rbnode* x)
 {
 	struct rbnode* r = r_child(x);
 	struct rbnode* y = _get_parent(x);
 
 	if(r)
-		return _rb_min(r);
+		return _succ(r);
 	else
 	{
 		while(y && x == r_child(y))
@@ -681,76 +671,6 @@ struct rbnode* rb_remove(struct rbtree* t, unsigned long key)
 	return x;
 error_ret:
 	return 0;
-}
-
-struct rbt_traverse_node
-{
-	struct dlnode lstnd;
-	struct rbnode* rbnd;
-};
-
-struct rbt_free_idx_node
-{
-	struct dlnode lstnd;
-	int i;
-};
-
-struct rbt_traverse_node __traverse_pool[MAX_TRAVERSE_QUEUE_LEN];
-
-static int prepare_traverse_node(struct dlist* t_list, struct rbt_traverse_node* nd, struct rbnode* p)
-{
-	lst_clr(&nd->lstnd);
-	nd->rbnd = p;
-
-	if(!lst_push_back(t_list, &nd->lstnd)) goto error_ret;
-
-	return 1;
-error_ret:
-	return 0;
-}
-
-void rb_traverse(struct rbtree* t, order_function f)
-{
-//	struct rbnode* p = t->root;
-//	struct dlist visit_list;
-//
-//	if(!p) goto error_ret;
-//	if(!lst_new(&visit_list)) goto error_ret;
-//
-//	struct rbt_traverse_node tnd;
-//	if(!prepare_traverse_node(&visit_list, &tnd, p)) goto error_ret;
-//
-//	while(1)
-//	{
-//		struct dlnode* dln = 0;
-//		struct rbt_traverse_node* curnode = 0;
-//
-//		if(visit_list.size <= 0) break;
-//
-//		dln = lst_pop_front(&visit_list);
-//		if(!dln) goto error_ret;
-//
-//		curnode = node_cast(rbt_traverse_node, dln, lstnd);
-//
-//		if(!curnode->rbnd) goto error_ret;
-//		(*f)(curnode->rbnd);
-//
-//		if(curnode->rbnd->lchild != 0)
-//		{
-//			struct rbt_traverse_node tndl;
-//			if(!prepare_traverse_node(&visit_list, &tndl, curnode->rbnd->lchild)) goto error_ret;
-//		}
-//
-//		if(curnode->rbnd->rchild != 0)
-//		{
-//			struct rbt_traverse_node tndr;
-//			if(!prepare_traverse_node(&visit_list, &tndr, curnode->rbnd->rchild)) goto error_ret;
-//		}
-//	}
-//
-//	return;
-//error_ret:
-//	return;
 }
 
 void pre_order(struct rbnode* node, order_function f)

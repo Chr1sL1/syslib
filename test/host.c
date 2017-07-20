@@ -13,6 +13,7 @@
 #include "utask.h"
 #include "misc.h"
 #include "mmpool.h"
+#include "pgpool.h"
 #include "ringbuf.h"
 #include "ipc.h"
 #include <signal.h>
@@ -25,6 +26,7 @@ static const char* alpha_beta = "abcdefghijlmnopqrstuvwxyz1234567890";
 int test_arr[10];
 
 char* mmp_buf;
+char* pgp_buf;
 
 long running = 0;
 
@@ -84,7 +86,7 @@ void test_rbtree(void)
 	for(int i = 0; i < test_arr_count; i++) 
 		test_arr[i] = i;
 
-//	random_shuffle(test_arr, test_arr_count);
+	random_shuffle(test_arr, test_arr_count);
 
 	struct rbtree test_tree;
 	test_tree.size = 0;
@@ -114,9 +116,9 @@ void test_rbtree(void)
 	printf("insert elapse: %ld.\n", (long)tv_end.tv_usec - (long)tv_begin.tv_usec);
 	printf("rooooooooooooooooooot:%ld\n", test_tree.root->key);
 
-	printf("traverse: \n");
-	rb_traverse(&test_tree, print_node);	
-	printf("\n");
+//	printf("traverse: \n");
+//	rb_traverse(&test_tree, print_node);	
+//	printf("\n");
 
 	random_shuffle(test_arr, test_arr_count);
 
@@ -452,9 +454,68 @@ error_ret:
 	return -1;
 }
 
-void test_mmpool_ex(void)
+long profile_pgpool(void)
 {
+	long rslt = 0;
+	unsigned int size = 100 * 1024 * 1024;
+	long rnd = 0;
+	unsigned long r1 = 0, r2 = 0;
 
+	unsigned long tmp = 0;
+	unsigned long alloc_sum = 0, free_sum = 0;
+	unsigned long alloc_max = 0, free_max = 0;
+	unsigned long count = 1000;
+
+	pgp_buf = malloc(size);
+
+	struct pgpool_config cfg;
+	cfg.maxpg_count = 1024;
+
+	struct pgpool* pool = pgp_new(pgp_buf, size, &cfg);
+
+	if(!pool) goto error_ret;
+
+	for(long i = 0; i < count; i++)
+	{
+		rnd = random() % 1024;
+
+		if(rnd <= 0)
+			continue;
+
+		r1 = rdtsc();
+		void* p = pgp_alloc(pool, rnd * 4096);
+		r2 = rdtsc();
+
+		tmp = r2 - r1;
+		alloc_sum += tmp;
+		if(tmp > alloc_max)
+			alloc_max = tmp;
+
+
+		if(!p) printf("alloc errrrrrrrrrrrrrrrrror.\n");
+
+		r1 = rdtsc();
+		rslt = pgp_free(pool, p);
+		r2 = rdtsc();
+
+		if(rslt < 0) printf("free errrrrrrrrrrrrrrrrror.\n");
+
+		tmp = r2 - r1;
+		free_sum += tmp;
+		if(tmp > free_max)
+			free_max = tmp;
+	}
+
+//	rslt = mmp_check(pool);
+
+	printf("[avg] alloc cycle: %lu, free cycle: %lu.\n", alloc_sum / count, free_sum / count);
+	printf("[max] alloc cycle: %lu, free cycle: %lu.\n", alloc_max, free_max);
+
+	pgp_del(pool);
+
+	return 0;
+error_ret:
+	return -1;
 }
 
 unsigned int at2f(unsigned v)
@@ -787,8 +848,10 @@ int main(void)
 {
 //	unsigned long i = test_asm_align8(10);
 //	printf("%lu\n", i);
-
-	srandom(1234);
+//
+//	unsigned long seed = 1500515702;//time(0);
+	unsigned long seed = time(0);
+	srandom(seed);
 
 	dbg("%lu,%lu\n", is_2power(129), is_2power(64));
 
@@ -801,6 +864,7 @@ int main(void)
 //
 //	profile_mmpool();
 
+	profile_pgpool();
 
 
 //	test_mmp(1024 * 1024, 6, 10, 64);
@@ -818,7 +882,9 @@ int main(void)
 //	printf("cycle = %lu\n", r2 - r1);
 //
 //
-	test_rbtree(); 
+//	test_rbtree(); 
+
+	printf("this seed: %lu\n", seed);
 //	test_task();
 //	test_lst();
 
