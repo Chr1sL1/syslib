@@ -433,7 +433,7 @@ long test_pgp(long total_size, long maxpg_count, long node_count)
 
 	for(long i = 0; i < node_count; ++i)
 	{
-		te[i]._size = random() % (maxpg_count * 4096);
+		te[i]._size = random() % (maxpg_count * 4096 * 3 / 4);
 		te[i]._block = 0;
 		te[i]._usage_duration = random() % 200;
 		te[i]._alloc_time = 0;
@@ -461,6 +461,8 @@ long test_pgp(long total_size, long maxpg_count, long node_count)
 			{
 				if(te[i]._alloc_time == 0)
 				{
+					printf("--- alloc [%ld], idx: %ld, duration: %ld, loop_count: %ld\n", te[i]._size, i, te[i]._usage_duration, loop_count);
+
 					te[i]._block = pgp_alloc(mp, te[i]._size);
 					if(!te[i]._block)
 					{
@@ -472,7 +474,6 @@ long test_pgp(long total_size, long maxpg_count, long node_count)
 					{
 						te[i]._alloc_time = now_time;
 
-						printf("--- alloc [%ld], idx: %ld, duration: %ld.\n", te[i]._size, i, te[i]._usage_duration);
 
 						if(pgp_check(mp) < 0)
 							goto error_ret;
@@ -1000,7 +1001,7 @@ int main(void)
 
 //	profile_pgpool();
 
-	test_pgp(50 * 1024 * 1024, 100, 64);
+	test_pgp(500 * 1024 * 1024, 100, 64);
 
 //	test_mmp(1024 * 1024, 6, 10, 64);
 

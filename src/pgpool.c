@@ -220,12 +220,13 @@ static long _take_free_node(struct _pgpool_impl* pgpi, long pg_count, struct _pg
 		while(dln != &pgpi->_flh[idx]._free_list.tail)
 		{
 			candi_pgn = _conv_fln(dln);
-			if(candi_pgn->_pg_count >= pg_count)
+			if(candi_pgn->_pg_count >= pg_count && !candi_pgn->using)
 			{
-				if(candi_pgn->using) goto error_ret;
 				_unlink_fln(pgpi, candi_pgn);
 				goto candi_found;
 			}
+			candi_pgn = 0;
+
 			dln = dln->next;
 		}
 	}
