@@ -247,7 +247,7 @@ error_ret:
 	return;
 }
 
-struct mmp_test_entry
+struct mem_test_entry
 {
 	void* _block;
 	long _size;
@@ -266,7 +266,7 @@ long test_mmp(long total_size, long min_block_idx, long max_block_idx, long node
 	long min_block_size, max_block_size;
 	long enable_alloc = 1;
 	struct mmpool* mp = 0;
-	struct mmp_test_entry te[node_count];
+	struct mem_test_entry te[node_count];
 	struct timeval tv;
 	struct mmpool_config cfg;
 	struct shmm_blk* sbo = 0;
@@ -389,6 +389,140 @@ error_ret:
 		shmm_del(&sb);
 
 	printf("test_mmp failed.\n");
+	return -1;
+}
+
+long test_pgp(long total_size, long maxpg_count, long node_count)
+{
+	long rslt = 0;
+	void* mm_buf = 0;
+	unsigned long now_time = 0;
+	unsigned long loop_count = 0;
+	unsigned long restart_alloc_time = 0;
+	long req_total_size = 0;
+	long enable_alloc = 1;
+	struct pgpool* mp = 0;
+	struct mem_test_entry te[node_count];
+	struct timeval tv;
+	struct pgpool_config cfg;
+	struct shmm_blk* sbo = 0;
+	long shmm_channel = 18;
+
+//	struct shmm_blk* sb = shmm_new("/dev/null", shmm_channel, total_size, 0);
+//	if(!sb)
+//	{
+//		perror(strerror(errno));
+//		goto error_ret;
+//	}
+//
+//
+//	sbo = shmm_open("/dev/null", shmm_channel);
+//	if(!sbo)
+//	{
+//		perror(strerror(errno));
+//		goto error_ret;
+//	}
+//	shmm_close(&sbo);
+
+	cfg.maxpg_count = maxpg_count;
+
+	mm_buf = malloc(total_size + 1024);
+
+	mp = pgp_new(mm_buf, total_size, &cfg);
+	if(!mp) goto error_ret;
+
+	for(long i = 0; i < node_count; ++i)
+	{
+		te[i]._size = random() % (maxpg_count * 4096);
+		te[i]._block = 0;
+		te[i]._usage_duration = random() % 200;
+		te[i]._alloc_time = 0;
+
+		req_total_size += te[i]._size;
+	}
+
+	printf("req_total_size : %ld\n", req_total_size);
+	running = 1;
+
+	struct sigaction sa;
+	sa.sa_sigaction = signal_stop;
+	sa.sa_flags = SA_SIGINFO;
+	sigaction(SIGINT, &sa, 0);
+
+	while(running)
+	{
+		gettimeofday(&tv, 0);
+		now_time = tv.tv_sec * 1000000 + tv.tv_usec;
+		loop_count++;
+
+		for(long i = 0; i < node_count; ++i)
+		{
+			if(enable_alloc)
+			{
+				if(te[i]._alloc_time == 0)
+				{
+					te[i]._block = pgp_alloc(mp, te[i]._size);
+					if(!te[i]._block)
+					{
+						printf("alloc error, loopcount: %ld, idx: %ld, reqsize: %ld.\n", loop_count, i, te[i]._size);
+						enable_alloc = 0;
+						restart_alloc_time = now_time + 2000;
+					}
+					else
+					{
+						te[i]._alloc_time = now_time;
+
+						printf("--- alloc [%ld], idx: %ld, duration: %ld.\n", te[i]._size, i, te[i]._usage_duration);
+
+						if(pgp_check(mp) < 0)
+							goto error_ret;
+
+					}
+				}
+			}
+			else if(restart_alloc_time > now_time)
+			{
+				enable_alloc = 1;
+				restart_alloc_time = 0;
+			}
+
+
+			if(te[i]._alloc_time + te[i]._usage_duration < now_time)
+			{
+				printf("--- free [%ld], idx: %ld, loop_count: %ld.\n", te[i]._size, i, loop_count);
+
+				rslt = pgp_free(mp, te[i]._block);
+				if(rslt < 0)
+				{
+					printf("free error, loopcount: %ld, idx: %ld.\n", loop_count, i);
+					goto error_ret;
+				}
+
+				te[i]._alloc_time = 0;
+
+				if(pgp_check(mp) < 0)
+					goto error_ret;
+			}
+
+
+		}
+		if(rslt < 0) goto error_ret;
+loop_continue:
+		usleep(10);
+	}
+
+	pgp_del(mp);
+//	shmm_del(&sb);
+	printf("test pgp successed.\n");
+	return 0;
+error_ret:
+	if(mp)
+		pgp_check(mp);
+
+//	if(sb)
+//		shmm_del(&sb);
+
+	printf("test_pgp failed.\n");
 	return -1;
 }
 
@@ -849,8 +983,8 @@ int main(void)
 //	unsigned long i = test_asm_align8(10);
 //	printf("%lu\n", i);
 //
-//	unsigned long seed = 1500515702;//time(0);
-	unsigned long seed = time(0);
+	unsigned long seed = 0;//time(0);
+//	unsigned long seed = time(0);
 	srandom(seed);
 
 	dbg("%lu,%lu\n", is_2power(129), is_2power(64));
@@ -864,8 +998,9 @@ int main(void)
 //
 //	profile_mmpool();
 
-	profile_pgpool();
+//	profile_pgpool();
 
+	test_pgp(50 * 1024 * 1024, 100, 64);
 
 //	test_mmp(1024 * 1024, 6, 10, 64);
 

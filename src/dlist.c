@@ -51,6 +51,9 @@ long lst_insert_before(struct dlist* lst, struct dlnode* suc, struct dlnode* nod
 
 	++lst->size;
 
+//	if(lst_check(lst) < 0)
+//		goto error_ret;
+
 	return 0;
 error_ret:
 	return -1;
@@ -61,13 +64,16 @@ long lst_insert_after(struct dlist* lst, struct dlnode* prv, struct dlnode* node
 	if(!lst || !prv || !node) goto error_ret;
 	if(prv == &lst->tail) goto error_ret;
 
-	node->next = prv->next;
 	node->prev = prv;
+	node->next = prv->next;
 
 	prv->next->prev = node;
 	prv->next = node;
 
 	++lst->size;
+
+//	if(lst_check(lst) < 0)
+//		goto error_ret;
 
 	return 0;
 error_ret:
@@ -88,6 +94,9 @@ long lst_remove(struct dlist* lst, struct dlnode* node)
 	node->next = 0;
 	
 	--lst->size;
+
+//	if(lst_check(lst) < 0)
+//		goto error_ret;
 
 	return 0;
 error_ret:
@@ -146,25 +155,48 @@ error_ret:
 	return 0;
 
 }
-
-long lst_check(struct dlist* lst)
+static long _lst_check_loop(struct dlist* lst)
 {
-	struct dlnode* node = lst->head.next;
+	struct dlnode* pf = lst->head.next;
+	struct dlnode* ps = lst->head.next;
 
-	while(node != &lst->tail)
+	while(1)
 	{
-		struct dlnode* suc = node->next;
+		if(pf == &lst->tail || pf->next == &lst->tail)
+			break;
+		if(ps == &lst->tail)
+			break;
 
-		if(suc->prev != node)
-			goto error_ret;
+		pf = pf->next->next;
+		ps = ps->next;
 
+		if(pf == ps)
+			return -1;
+	}
 
-		node = suc;
+	pf = lst->tail.prev;
+	ps = lst->tail.prev;
+
+	while(1)
+	{
+		if(pf == &lst->head|| pf->prev == &lst->head)
+			break;
+		if(ps == &lst->head)
+			break;
+
+		pf = pf->prev->prev;
+		ps = ps->prev;
+
+		if(pf == ps)
+			return -1;
 	}
 
 	return 0;
-error_ret:
-	return -1;
+}
+
+long lst_check(struct dlist* lst)
+{
+	return _lst_check_loop(lst);
 }
 
 

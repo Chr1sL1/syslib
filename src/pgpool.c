@@ -3,7 +3,7 @@
 #include "misc.h"
 #include "rbtree.h"
 #include <stdlib.h>
-
+#include <stdio.h>
 
 #define PG_SIZE			(4096)
 #define PG_SIZE_SHIFT	(12)
@@ -122,20 +122,47 @@ static inline long _return_free_pgn(struct _pgpool_impl* pgpi, struct _pg_node* 
 
 static inline struct _pg_node* _fetch_fln(struct _pgpool_impl* pgpi, long flh_idx)
 {
+	struct _pg_node* pgn;
 	struct dlnode* fln = lst_pop_front(&pgpi->_flh[flh_idx]._free_list);
-	return _conv_fln(fln);
+	pgn = _conv_fln(fln);
+
+	if(lst_check(&pgpi->_flh[flh_idx]._free_list) < 0)
+		goto error_ret;
+
+	return pgn;
+error_ret:
+	return 0;
 }
 
 static inline long _link_fln(struct _pgpool_impl* pgpi, struct _pg_node* pgn)
 {
+	long rslt;
 	long flh_idx = log_2(pgn->_pg_count);
-	return lst_push_front(&pgpi->_flh[flh_idx]._free_list, &pgn->_fln_node);
+
+	lst_clr(&pgn->_fln_node);
+
+	rslt = lst_push_front(&pgpi->_flh[flh_idx]._free_list, &pgn->_fln_node);
+
+	if(lst_check(&pgpi->_flh[flh_idx]._free_list) < 0)
+		goto error_ret;
+
+	return rslt;
+error_ret:
+	return -1;
 }
 
 static inline long _unlink_fln(struct _pgpool_impl* pgpi, struct _pg_node* pgn)
 {
+	long rslt;
 	long flh_idx = log_2(pgn->_pg_count);
-	return lst_remove(&pgpi->_flh[flh_idx]._free_list, &pgn->_fln_node);
+	rslt = lst_remove(&pgpi->_flh[flh_idx]._free_list, &pgn->_fln_node);
+
+	if(lst_check(&pgpi->_flh[flh_idx]._free_list) < 0)
+		goto error_ret;
+
+	return rslt;
+error_ret:
+	return -1;
 }
 
 static inline long _link_rbn(struct _pgpool_impl* pgpi, struct _pg_node* pgn)
@@ -199,6 +226,7 @@ static long _take_free_node(struct _pgpool_impl* pgpi, long pg_count, struct _pg
 				_unlink_fln(pgpi, candi_pgn);
 				goto candi_found;
 			}
+			dln = dln->next;
 		}
 	}
 
@@ -225,57 +253,43 @@ error_ret:
 	return -1;
 }
 
-static inline struct _pg_node* _merge_free_node(struct _pgpool_impl* pgpi, struct _pg_node* prev, struct _pg_node* next)
+static inline long _merge_free_node(struct _pgpool_impl* pgpi, struct _pg_node* prev, struct _pg_node* next)
 {
 	if(_get_payload(next) != _get_payload(prev) + prev->_pg_count * PG_SIZE)
 		goto error_ret;
+
+	_unlink_fln(pgpi, next);
+	_unlink_rbn(pgpi, next);
 
 	prev->_pg_count = prev->_pg_count + next->_pg_count;
 
 	_return_free_pgn(pgpi, next);
 
-	return prev;
-error_ret:
 	return 0;
+error_ret:
+	return -1;
 }
 
 static long _return_free_node(struct _pgpool_impl* pgpi, struct _pg_node* pgn)
 {
 	long found = 0;
+	long rslt = 0;
 	struct rbnode* succ;
-	struct _pg_node* ret_pgn = pgn;
 	struct _pg_node* succ_pgn;
 
 	succ = rb_succ(&pgn->_rb_node);
-	if(succ)
+	while(succ && rslt >= 0)
 	{
 		succ_pgn = _conv_rbn(succ);
-		if(succ_pgn->using || pgn->_pg_count + succ_pgn->_pg_count > pgpi->_cfg.maxpg_count) goto succ_ret;
-
-		found = 1;
-		_unlink_rbn(pgpi, pgn);
-	}
-
-	while(succ && !succ_pgn->using && ret_pgn)
-	{
-		succ_pgn = _conv_rbn(succ);
-
-		_unlink_fln(pgpi, succ_pgn);
-		_unlink_rbn(pgpi, succ_pgn);
-
-		if(succ_pgn->_pg_count + ret_pgn->_pg_count >= pgpi->_cfg.maxpg_count)
+		if(succ_pgn->using || pgn->_pg_count + succ_pgn->_pg_count > pgpi->_cfg.maxpg_count)
 			break;
 
-		ret_pgn = _merge_free_node(pgpi, ret_pgn, succ_pgn);
-
+		rslt = _merge_free_node(pgpi, pgn, succ_pgn);
 		succ = rb_succ(&pgn->_rb_node);
 	}
 
-	if(found)
-		_link_rbn(pgpi, ret_pgn);
-
 succ_ret:
-	_link_fln(pgpi, ret_pgn);
+	_link_fln(pgpi, pgn);
 	return 0;
 error_ret:
 	return -1;
@@ -435,8 +449,21 @@ error_ret:
 	return -1;
 }
 
-void pgp_check(struct pgpool* pgp)
+long pgp_check(struct pgpool* pgp)
 {
+	long rslt = 0;
 	struct _pgpool_impl* pgpi = _conv_impl(pgp);
+
+	for(long i = 0; i < pgpi->_cfg.freelist_count; ++i)
+	{
+		rslt = lst_check(&pgpi->_flh[i]._free_list);
+		if(rslt < 0)
+		{
+			printf("!!! loop in freelist [%ld] !!!\n", i);
+			return -1;
+		}
+	}
+
+	return rslt;
 }
 
