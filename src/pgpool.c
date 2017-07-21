@@ -250,7 +250,7 @@ static long _return_free_node(struct _pgpool_impl* pgpi, struct _pg_node* pgn)
 	if(succ)
 	{
 		succ_pgn = _conv_rbn(succ);
-		if(succ_pgn->using) goto succ_ret;
+		if(succ_pgn->using || pgn->_pg_count + succ_pgn->_pg_count > pgpi->_cfg.maxpg_count) goto succ_ret;
 
 		found = 1;
 		_unlink_rbn(pgpi, pgn);
@@ -262,6 +262,9 @@ static long _return_free_node(struct _pgpool_impl* pgpi, struct _pg_node* pgn)
 
 		_unlink_fln(pgpi, succ_pgn);
 		_unlink_rbn(pgpi, succ_pgn);
+
+		if(succ_pgn->_pg_count + ret_pgn->_pg_count >= pgpi->_cfg.maxpg_count)
+			break;
 
 		ret_pgn = _merge_free_node(pgpi, ret_pgn, succ_pgn);
 
@@ -432,10 +435,8 @@ error_ret:
 	return -1;
 }
 
-void pgp_check(struct pgpool* up)
+void pgp_check(struct pgpool* pgp)
 {
 	struct _pgpool_impl* pgpi = _conv_impl(pgp);
-
-
 }
 

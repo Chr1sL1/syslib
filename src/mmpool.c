@@ -807,13 +807,18 @@ long mmp_free(struct mmpool* mmp, void* p)
 	{
 		long offset = (long)bh - (long)mmpi->_chunk_addr;
 		long next_block_size = (bh->_block_size << 1);
-		if(next_block_size < max_block_size && ((offset & -next_block_size) == offset))
-			bh = _merge_buddy(mmpi, bh);
-		else
-			bh = _merge_buddy(mmpi, _prev_block(bh));
 
-		if(!bh)
-			break;
+		if(next_block_size < max_block_size)
+		{
+			if((offset & -next_block_size) == offset)
+				bh = _merge_buddy(mmpi, bh);
+			else
+				bh = _merge_buddy(mmpi, _prev_block(bh));
+
+			if(!bh)
+				break;
+
+		}
 
 		rslt = _return_free_node_to_head(mmpi, bh);
 		if(rslt < 0) goto error_ret;
