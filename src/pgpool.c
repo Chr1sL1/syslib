@@ -8,7 +8,7 @@
 #define PG_SIZE			(4096)
 #define PG_SIZE_SHIFT	(12)
 
-#define PGP_CHUNK_LABEL (0xbaba2121fdfd9696)
+#define PGP_CHUNK_LABEL (0xbaba2121fdfd9696UL)
 #define HASH_COUNT		(256)
 
 #pragma pack(1)
@@ -72,11 +72,6 @@ static inline unsigned long _align_pg(unsigned long addr)
 	return (addr + (PG_SIZE - 1)) & (~(PG_SIZE - 1));
 }
 
-static inline long _hash_key(unsigned long addr)
-{
-	return (addr & 0xFF);
-}
-
 static inline struct _pgpool_impl* _conv_impl(struct pgpool* pgp)
 {
 	return (struct _pgpool_impl*)((void*)pgp - (unsigned long)(&((struct _pgpool_impl*)(0))->_the_pool));
@@ -126,8 +121,8 @@ static inline struct _pg_node* _fetch_fln(struct _pgpool_impl* pgpi, long flh_id
 	struct dlnode* fln = lst_pop_front(&pgpi->_flh[flh_idx]._free_list);
 	pgn = _conv_fln(fln);
 
-	if(lst_check(&pgpi->_flh[flh_idx]._free_list) < 0)
-		goto error_ret;
+//	if(lst_check(&pgpi->_flh[flh_idx]._free_list) < 0)
+//		goto error_ret;
 
 	return pgn;
 error_ret:
@@ -143,8 +138,8 @@ static inline long _link_fln(struct _pgpool_impl* pgpi, struct _pg_node* pgn)
 
 	rslt = lst_push_front(&pgpi->_flh[flh_idx]._free_list, &pgn->_fln_node);
 
-	if(lst_check(&pgpi->_flh[flh_idx]._free_list) < 0)
-		goto error_ret;
+//	if(lst_check(&pgpi->_flh[flh_idx]._free_list) < 0)
+//		goto error_ret;
 
 	return rslt;
 error_ret:
@@ -157,8 +152,8 @@ static inline long _unlink_fln(struct _pgpool_impl* pgpi, struct _pg_node* pgn)
 	long flh_idx = log_2(pgn->_pg_count);
 	rslt = lst_remove(&pgpi->_flh[flh_idx]._free_list, &pgn->_fln_node);
 
-	if(lst_check(&pgpi->_flh[flh_idx]._free_list) < 0)
-		goto error_ret;
+//	if(lst_check(&pgpi->_flh[flh_idx]._free_list) < 0)
+//		goto error_ret;
 
 	return rslt;
 error_ret:
@@ -340,7 +335,7 @@ error_ret:
 	return -1;
 }
 
-struct pgpool* pgp_new(void* addr, long size, struct pgpool_config* cfg)
+struct pgpool* pgp_create(void* addr, long size, struct pgpool_config* cfg)
 {
 	long rslt = 0;
 	struct _chunk_header* hd;
@@ -388,12 +383,12 @@ struct pgpool* pgp_new(void* addr, long size, struct pgpool_config* cfg)
 	return &pgpi->_the_pool;
 error_ret:
 	if(pgpi)
-		pgp_del(&pgpi->_the_pool);
+		pgp_destroy(&pgpi->_the_pool);
 
 	return 0;
 }
 
-void pgp_del(struct pgpool* pgp)
+void pgp_destroy(struct pgpool* pgp)
 {
 	struct _pgpool_impl* pgpi = _conv_impl(pgp);
 

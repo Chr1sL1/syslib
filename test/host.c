@@ -428,7 +428,7 @@ long test_pgp(long total_size, long maxpg_count, long node_count)
 
 	mm_buf = malloc(total_size + 1024);
 
-	mp = pgp_new(mm_buf, total_size, &cfg);
+	mp = pgp_create(mm_buf, total_size, &cfg);
 	if(!mp) goto error_ret;
 
 	for(long i = 0; i < node_count; ++i)
@@ -512,7 +512,7 @@ loop_continue:
 		usleep(10);
 	}
 
-	pgp_del(mp);
+	pgp_destroy(mp);
 //	shmm_del(&sb);
 	printf("test pgp successed.\n");
 	return 0;
@@ -606,7 +606,7 @@ long profile_pgpool(void)
 	struct pgpool_config cfg;
 	cfg.maxpg_count = 1024;
 
-	struct pgpool* pool = pgp_new(pgp_buf, size, &cfg);
+	struct pgpool* pool = pgp_create(pgp_buf, size, &cfg);
 
 	if(!pool) goto error_ret;
 
@@ -646,7 +646,7 @@ long profile_pgpool(void)
 	printf("[avg] alloc cycle: %lu, free cycle: %lu.\n", alloc_sum / count, free_sum / count);
 	printf("[max] alloc cycle: %lu, free cycle: %lu.\n", alloc_max, free_max);
 
-	pgp_del(pool);
+	pgp_destroy(pool);
 
 	return 0;
 error_ret:
@@ -984,8 +984,8 @@ int main(void)
 //	unsigned long i = test_asm_align8(10);
 //	printf("%lu\n", i);
 //
-	unsigned long seed = 0;//time(0);
-//	unsigned long seed = time(0);
+//	unsigned long seed = 0;//time(0);
+	unsigned long seed = time(0);
 	srandom(seed);
 
 	dbg("%lu,%lu\n", is_2power(129), is_2power(64));
@@ -1001,7 +1001,7 @@ int main(void)
 
 //	profile_pgpool();
 
-	test_pgp(500 * 1024 * 1024, 100, 64);
+	test_pgp(50 * 1024 * 1024, 100, 64);
 
 //	test_mmp(1024 * 1024, 6, 10, 64);
 
