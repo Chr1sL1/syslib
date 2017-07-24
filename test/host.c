@@ -23,16 +23,16 @@
 const char* share_memory_name = "test_shm_17x";
 static const char* alpha_beta = "abcdefghijlmnopqrstuvwxyz1234567890";
 
-int test_arr[10];
+long test_arr[10];
 
 char* mmp_buf;
 char* pgp_buf;
 
 long running = 0;
 
-void swap(int* a, int* b)
+void swap(long* a, long* b)
 {
-	int tmp = *a;
+	long tmp = *a;
 	*a = *b;
 	*b = tmp;
 }
@@ -46,7 +46,7 @@ void print_array(int* a, int n)
 	printf("\n");
 }
 
-void random_shuffle(int* a, int n)
+void random_shuffle(long* a, int n)
 {
 	for(int i = 0; i < n; ++i)
 	{
@@ -63,7 +63,7 @@ void print_node(struct rbnode* node)
 		struct rbnode* lc = node->lchild;
 		struct rbnode* rc = node->rchild;
 
-		printf("%lu(%d)[%lu,%lu] ", node->key, node->isblack, lc ? lc->key:0, rc ? rc->key:0);
+		printf("%lu(%d)[%lu,%lu] ", (unsigned long)node->key, node->isblack, lc ? (unsigned long)lc->key:0, rc ? (unsigned long)rc->key:0);
 	}
 
 }
@@ -89,8 +89,7 @@ void test_rbtree(void)
 	random_shuffle(test_arr, test_arr_count);
 
 	struct rbtree test_tree;
-	test_tree.size = 0;
-	test_tree.root = NULL;
+	rb_init(&test_tree, 0);
 
 	gettimeofday(&tv_begin, NULL);
 
@@ -99,7 +98,7 @@ void test_rbtree(void)
 		struct rbnode* node = (struct rbnode*)malloc(sizeof(struct rbnode));
 		rb_fillnew(node);
 
-		node->key = test_arr[i];
+		node->key = (void*)test_arr[i];
 
 		r1 = rdtsc();
 		rb_insert(&test_tree, node);
@@ -114,7 +113,7 @@ void test_rbtree(void)
 
 	gettimeofday(&tv_end, NULL);
 	printf("insert elapse: %ld.\n", (long)tv_end.tv_usec - (long)tv_begin.tv_usec);
-	printf("rooooooooooooooooooot:%ld\n", test_tree.root->key);
+	printf("rooooooooooooooooooot:%lu\n", (unsigned long)test_tree.root->key);
 
 //	printf("traverse: \n");
 //	rb_traverse(&test_tree, print_node);	
@@ -126,9 +125,9 @@ void test_rbtree(void)
 
 	for(int i = 0; i < test_arr_count; i++)
 	{
-		printf("remove key: %d.\n", test_arr[i]);
+		printf("remove key: %lu.\n", (unsigned long)test_arr[i]);
 		r1 = rdtsc();
-		struct rbnode* node = rb_remove(&test_tree, test_arr[i]);
+		struct rbnode* node = rb_remove(&test_tree, (void*)test_arr[i]);
 		r2 = rdtsc();
 		printf("rbremove: %lu cycles.\n", r2 - r1);
 
@@ -281,7 +280,7 @@ long test_mmp(long total_size, long min_block_idx, long max_block_idx, long node
 	cfg.min_block_index = min_block_idx;
 	cfg.max_block_index = max_block_idx;
 
-	sbo = shmm_open("/dev/null", 1);
+	sbo = shmm_open("/dev/null", 1, 0);
 	if(!sbo)
 	{
 		perror(strerror(errno));
@@ -830,7 +829,7 @@ long test_shmm(void)
 		char read_buf[2] = { 0 };
 		struct ring_buf* rb;
 		rslt = 0;
-		struct shmm_blk* sb = shmm_open("/dev/zero", 1);
+		struct shmm_blk* sb = shmm_open("/dev/zero", 1, 0);
 		if(!sb)
 		{
 			printf("child process exit with error: %d\n", errno);
@@ -1001,7 +1000,7 @@ int main(void)
 
 //	profile_pgpool();
 
-	test_pgp(50 * 1024 * 1024, 100, 64);
+//	test_pgp(50 * 1024 * 1024, 100, 64);
 
 //	test_mmp(1024 * 1024, 6, 10, 64);
 
@@ -1018,7 +1017,7 @@ int main(void)
 //	printf("cycle = %lu\n", r2 - r1);
 //
 //
-//	test_rbtree(); 
+	test_rbtree(); 
 
 	printf("this seed: %lu\n", seed);
 //	test_task();

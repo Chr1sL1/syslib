@@ -57,6 +57,31 @@ error_ret:
 	return 0;
 }
 
+static inline long _def_order_func(void* key, struct rbnode* n)
+{
+	if(key < n->key) return -1;
+	else if(key > n->key) return 1;
+
+	return 0;
+}
+
+static inline long _compare_key(struct rbtree* t, void* key , struct rbnode* n)
+{
+	if(!t->cfunc)
+		return _def_order_func(key, n);
+
+	return (*t->cfunc)(key, n);
+}
+
+
+void rb_init(struct rbtree* t, compare_function cf)
+{
+	t->size = 0;
+	t->depth = 0;
+	t->root = 0;
+	t->cfunc = cf;
+}
+
 inline void rb_fillnew(struct rbnode* node)
 {
 	if(node)
@@ -260,6 +285,7 @@ error_ret:
 
 long rb_insert(struct rbtree* t, struct rbnode* node)
 {
+	long comp_ret;
 	struct rbnode* hot;
 
 	if(!node || ((unsigned long)node & 0x3) != 0) goto error_ret;
@@ -272,7 +298,9 @@ long rb_insert(struct rbtree* t, struct rbnode* node)
 
 	if(hot != 0)
 	{
-		if(node->key < hot->key)
+		comp_ret = _compare_key(t, node->key, hot);
+
+		if(comp_ret < 0)
 			hot->lchild = node;
 		else
 			hot->rchild = node;
@@ -291,8 +319,9 @@ error_ret:
 	return -1;
 }
 
-struct rbnode* rb_search(struct rbtree* t, unsigned long key, struct rbnode** hot)
+struct rbnode* rb_search(struct rbtree* t, void* key, struct rbnode** hot)
 {
+	long comp_ret = 1;
 	struct rbnode* h;
 	struct rbnode* p = t->root;
 
@@ -301,12 +330,13 @@ struct rbnode* rb_search(struct rbtree* t, unsigned long key, struct rbnode** ho
 
 	if(!t->root) goto error_ret;
 
-	while(p && p->key != key)
+	while(p && comp_ret != 0)
 	{
 		h = p;
-		if(key < p->key)
+		comp_ret = _compare_key(t, key, p);
+		if(comp_ret < 0)
 			p = p->lchild;
-		else if(key > p->key)
+		else if(comp_ret > 0)
 			p = p->rchild;
 	}
 
@@ -654,7 +684,7 @@ void rb_remove_node(struct rbtree* t, struct rbnode* x)
 
 }
 
-struct rbnode* rb_remove(struct rbtree* t, unsigned long key)
+struct rbnode* rb_remove(struct rbtree* t, void* key)
 {
 	struct rbnode* r;
 	struct rbnode* x;

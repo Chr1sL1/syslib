@@ -123,7 +123,7 @@ error_ret:
 	return -1;
 }
 
-struct shmm_blk* shmm_open(const char* shmm_name, long channel)
+struct shmm_blk* shmm_open(const char* shmm_name, long channel, void* at_addr)
 {
 	int flag = 0;
 	void* ret_addr = 0;
@@ -146,7 +146,7 @@ struct shmm_blk* shmm_open(const char* shmm_name, long channel)
 	if(sbi->_fd < 0)
 		goto error_ret;
 
-	ret_addr = shmat(sbi->_fd, 0, SHM_RND);
+	ret_addr = shmat(sbi->_fd, at_addr, SHM_RND);
 	if(ret_addr == (void*)(-1))
 		goto error_ret;
 

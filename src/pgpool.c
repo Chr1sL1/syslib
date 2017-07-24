@@ -346,6 +346,7 @@ struct pgpool* pgp_create(void* addr, long size, struct pgpool_config* cfg)
 	if(!pgpi) goto error_ret;
 
 	lst_new(&pgpi->_free_pgn_list);
+	rb_init(&pgpi->_pgn_tree, 0);
 
 	pgpi->_the_pool.addr = addr;
 	pgpi->_the_pool.size = size;

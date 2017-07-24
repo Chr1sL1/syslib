@@ -70,7 +70,7 @@ struct ipc_peer* ipc_link(long channel_id)
 	ipi = malloc(sizeof(struct _ipc_peer_impl));
 	if(!ipi) goto error_ret;
 
-	ipi->_shb = shmm_open("/dev/null", channel_id);
+	ipi->_shb = shmm_open("/dev/null", channel_id, 0);
 	if(!ipi->_shb) goto error_ret;
 
 	ipi->_rb = rbuf_open(ipi->_shb->addr);
