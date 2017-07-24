@@ -74,7 +74,7 @@ static inline long _compare_key(struct rbtree* t, void* key , struct rbnode* n)
 }
 
 
-void rb_init(struct rbtree* t, compare_function cf)
+inline void rb_init(struct rbtree* t, compare_function cf)
 {
 	t->size = 0;
 	t->depth = 0;
@@ -409,7 +409,7 @@ static inline void _swap_node(struct rbnode* p, struct rbnode* q)
 	_swap_value((unsigned long*)&p->lchild, (unsigned long*)&q->lchild);
 	_swap_value((unsigned long*)&p->rchild, (unsigned long*)&q->rchild);
 
-	_swap_value(&p->p, &q->p);
+	_swap_value((unsigned long*)&p->p, (unsigned long*)&q->p);
 //	_swap_color(p, q);
 
 error_ret:
