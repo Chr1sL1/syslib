@@ -270,30 +270,21 @@ long test_mmp(long total_size, long min_block_idx, long max_block_idx, long node
 	struct mmpool_config cfg;
 	struct shmm_blk* sbo = 0;
 
-	struct shmm_blk* sb = shmm_new("/dev/null", 1, total_size, 0);
-	if(!sb)
-	{
-		perror(strerror(errno));
-		goto error_ret;
-	}
+//	struct shmm_blk* sb = shmm_new("/dev/null", 27, total_size, 0);
+//	if(!sb)
+//	{
+//		perror(strerror(errno));
+//		goto error_ret;
+//	}
 
 	cfg.min_block_index = min_block_idx;
 	cfg.max_block_index = max_block_idx;
 
-	sbo = shmm_open("/dev/null", 1, 0);
-	if(!sbo)
-	{
-		perror(strerror(errno));
-		goto error_ret;
-	}
-	shmm_close(&sbo);
 
-	mmp_buf	= sb->addr;
+	mmp_buf = malloc(total_size);
+	if(!mmp_buf) goto error_ret;
 
-//	mmp_buf = malloc(total_size);
-//	if(!mmp_buf) goto error_ret;
-
-	mp = mmp_new(mmp_buf, total_size, &cfg);
+	mp = mmp_create(mmp_buf, total_size, &cfg);
 	if(!mp) goto error_ret;
 
 	min_block_size = 1 << min_block_idx;
@@ -331,7 +322,14 @@ long test_mmp(long total_size, long min_block_idx, long max_block_idx, long node
 			{
 				if(te[i]._alloc_time == 0)
 				{
+					printf("--- alloc [%ld], idx: %ld, duration: %ld, loopcount: %ld.\n", te[i]._size, i, te[i]._usage_duration, loop_count);
+
 					te[i]._block = mmp_alloc(mp, te[i]._size);
+
+//					rslt = mmp_check(mp);
+//					if(rslt < 0)
+//						goto error_ret;
+
 					if(!te[i]._block)
 					{
 						printf("alloc error, loopcount: %ld, idx: %ld, reqsize: %ld.\n", loop_count, i, te[i]._size);
@@ -342,7 +340,6 @@ long test_mmp(long total_size, long min_block_idx, long max_block_idx, long node
 					{
 						te[i]._alloc_time = now_time;
 
-						printf("--- alloc [%ld], idx: %ld, duration: %ld.\n", te[i]._size, i, te[i]._usage_duration);
 
 //						mmp_freelist_profile(mp);
 					}
@@ -357,6 +354,9 @@ long test_mmp(long total_size, long min_block_idx, long max_block_idx, long node
 
 			if(te[i]._alloc_time + te[i]._usage_duration < now_time)
 			{
+				printf("--- free [%ld], idx: %ld, loopcount: %ld.\n", te[i]._size, i, loop_count);
+				te[i]._alloc_time = 0;
+
 				rslt = mmp_free(mp, te[i]._block);
 				if(rslt < 0)
 				{
@@ -364,8 +364,9 @@ long test_mmp(long total_size, long min_block_idx, long max_block_idx, long node
 					goto error_ret;
 				}
 
-				printf("--- free [%ld], idx: %ld.\n", te[i]._size, i);
-				te[i]._alloc_time = 0;
+//				rslt = mmp_check(mp);
+//				if(rslt < 0)
+//					goto error_ret;
 			}
 
 //			mmp_freelist_profile(mp);
@@ -376,16 +377,16 @@ loop_continue:
 		usleep(10);
 	}
 
-	mmp_del(mp);
-	shmm_del(&sb);
+	mmp_destroy(mp);
+//	shmm_del(&sb);
 	printf("test_mmp successed.\n");
 	return 0;
 error_ret:
 	if(mp)
 		mmp_check(mp);
 
-	if(sb)
-		shmm_del(&sb);
+//	if(sb)
+//		shmm_del(&sb);
 
 	printf("test_mmp failed.\n");
 	return -1;
@@ -543,7 +544,7 @@ long profile_mmpool(void)
 	cfg.min_block_index = 6;
 	cfg.max_block_index = 10;
 
-	struct mmpool* pool = mmp_new(mmp_buf, size, &cfg);
+	struct mmpool* pool = mmp_create(mmp_buf, size, &cfg);
 
 	if(!pool) goto error_ret;
 
@@ -581,7 +582,7 @@ long profile_mmpool(void)
 	printf("[avg] alloc cycle: %lu, free cycle: %lu.\n", alloc_sum / count, free_sum / count);
 	printf("[max] alloc cycle: %lu, free cycle: %lu.\n", alloc_max, free_max);
 
-	mmp_del(pool);
+	mmp_destroy(pool);
 
 	return 0;
 error_ret:
@@ -984,10 +985,10 @@ int main(void)
 //	printf("%lu\n", i);
 //
 //	unsigned long seed = 0;//time(0);
-	unsigned long seed = time(0);
+	unsigned long seed = 0;//time(0);
 	srandom(seed);
 
-	dbg("%lu,%lu\n", is_2power(129), is_2power(64));
+//	dbg("%lu,%lu\n", is_2power(129), is_2power(64));
 
 
 //	test_ipc();
@@ -1000,9 +1001,9 @@ int main(void)
 
 //	profile_pgpool();
 
-//	test_pgp(50 * 1024 * 1024, 100, 64);
+	test_pgp(50 * 1024 * 1024, 100, 64);
 
-//	test_mmp(1024 * 1024, 6, 10, 64);
+//	test_mmp(100 * 1024, 6, 10, 64);
 
 //	unsigned long r1 = rdtsc();
 //	unsigned int aaa = align_to_2power_top(11);
@@ -1017,7 +1018,7 @@ int main(void)
 //	printf("cycle = %lu\n", r2 - r1);
 //
 //
-	test_rbtree(); 
+//	test_rbtree(); 
 
 	printf("this seed: %lu\n", seed);
 //	test_task();

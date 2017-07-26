@@ -111,3 +111,9 @@ unsigned long align16(unsigned long val)
 	return ((val + 15) & ~15);
 }
 
+inline void* move_ptr_align8(void* ptr, unsigned long offset)
+{
+	return (void*)(((unsigned long)(ptr + offset) + 7) & (~7));
+}
+
+

@@ -9,6 +9,7 @@
 #define l_child(node)	((node) ? (node)->lchild : 0)
 #define r_child(node)	((node) ? (node)->rchild : 0)
 
+
 #define MAX_TRAVERSE_QUEUE_LEN (1024)
 
 static inline void _cp_color(struct rbnode* to, struct rbnode* from)

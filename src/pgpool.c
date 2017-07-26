@@ -2,7 +2,6 @@
 #include "dlist.h"
 #include "misc.h"
 #include "rbtree.h"
-#include <stdlib.h>
 #include <stdio.h>
 
 #define PG_SIZE			(4096)
@@ -16,7 +15,8 @@
 struct _chunk_header
 {
 	unsigned long _chunck_label;
-	unsigned long _reserved;
+	unsigned long _addr_begin;
+	unsigned long _addr_end;
 };
 
 #pragma pack()
@@ -291,13 +291,59 @@ error_ret:
 	return -1;
 }
 
-static long _pgp_init_chunk(struct _pgpool_impl* pgpi)
+static struct _pgpool_impl* _pgp_init_chunk(void* addr, unsigned long size, struct pgpool_config* cfg)
 {
+	struct _pgpool_impl* pgpi;
 	struct _chunk_header* hd;
 	long remain_count, flh_idx, rslt;
 	void* pg;
+	void* cur_offset;
+	unsigned long chunk_pg_count;
 
-	hd = pgpi->_chunk_addr - sizeof(struct _chunk_header);
+	hd = (struct _chunk_header*)addr;
+	cur_offset = move_ptr_align8(addr, sizeof(struct _chunk_header));
+
+	hd->_chunck_label = PGP_CHUNK_LABEL;
+
+	pgpi = (struct _pgpool_impl*)cur_offset;
+	cur_offset = move_ptr_align8(cur_offset, sizeof(struct _pgpool_impl));
+
+	pgpi->_the_pool.addr_begin = addr;
+	pgpi->_the_pool.addr_end = (void*)_align_pg((unsigned long)addr + size) - PG_SIZE;
+
+	hd->_addr_begin = (unsigned long)pgpi->_the_pool.addr_begin;
+	hd->_addr_end = (unsigned long)pgpi->_the_pool.addr_end;
+
+	lst_new(&pgpi->_free_pgn_list);
+	rb_init(&pgpi->_pgn_tree, 0);
+
+	pgpi->_cfg.maxpg_count = cfg->maxpg_count;
+	pgpi->_cfg.freelist_count = log_2(cfg->maxpg_count) + 1;
+
+	pgpi->_flh = (struct _free_list_head*)cur_offset;
+	cur_offset += sizeof(struct _free_list_head) * pgpi->_cfg.freelist_count;
+
+	for(long i = 0; i < pgpi->_cfg.freelist_count; ++i)
+	{
+		lst_new(&pgpi->_flh[i]._free_list);
+	}
+
+	pgpi->_chunk_pgcount = (pgpi->_the_pool.addr_end - cur_offset) / (PG_SIZE + sizeof(struct _pg_node));
+
+	pgpi->_pgn_pool = (struct _pg_node*)cur_offset;
+	cur_offset = move_ptr_align8(cur_offset, sizeof(struct _pg_node) * pgpi->_chunk_pgcount);
+	cur_offset = (void*)_align_pg((unsigned long)cur_offset);
+
+	pgpi->_chunk_addr = cur_offset;
+
+	for(long i = 0; i < pgpi->_chunk_pgcount; ++i)
+	{
+		lst_clr(&pgpi->_pgn_pool[i]._free_pgn_node);
+		lst_push_back(&pgpi->_free_pgn_list, &pgpi->_pgn_pool[i]._free_pgn_node);
+	}
+
+	chunk_pg_count = (pgpi->_the_pool.addr_end - cur_offset) / PG_SIZE;
+
 	remain_count = pgpi->_chunk_pgcount - pgpi->_cfg.maxpg_count;
 	pg = pgpi->_chunk_addr;
 
@@ -320,66 +366,35 @@ static long _pgp_init_chunk(struct _pgpool_impl* pgpi)
 		remain_count -= pgn->_pg_count;
 	}
 
-	hd->_chunck_label = PGP_CHUNK_LABEL;
-
-	return 0;
+	return pgpi;
 error_ret:
-	return -1;
+	return 0;
 }
 
-static long _pgp_load_chunk(struct _pgpool_impl* pgpi)
+static struct _pgpool_impl* _pgp_load_chunk(void* addr, unsigned long size)
 {
+	struct _pgpool_impl* pgpi;
 
-	return 0;
+	return pgpi;
 error_ret:
-	return -1;
+	return 0;
 }
 
-struct pgpool* pgp_create(void* addr, long size, struct pgpool_config* cfg)
+struct pgpool* pgp_create(void* addr, unsigned long size, struct pgpool_config* cfg)
 {
 	long rslt = 0;
 	struct _chunk_header* hd;
 	struct _pgpool_impl* pgpi;
-	if(!addr || size <= PG_SIZE) goto error_ret;
 
-	pgpi = (struct _pgpool_impl*)malloc(sizeof(struct _pgpool_impl));
-	if(!pgpi) goto error_ret;
+	if(!addr || ((unsigned long)addr & 0x7 != 0) || size <= PG_SIZE) goto error_ret;
 
-	lst_new(&pgpi->_free_pgn_list);
-	rb_init(&pgpi->_pgn_tree, 0);
-
-	pgpi->_the_pool.addr = addr;
-	pgpi->_the_pool.size = size;
-	pgpi->_cfg.maxpg_count = cfg->maxpg_count;
-	pgpi->_cfg.freelist_count = log_2(cfg->maxpg_count) + 1;
-
-	pgpi->_chunk_addr = (void*)_align_pg((unsigned long)addr + sizeof(struct _chunk_header));
-	pgpi->_chunk_pgcount = (size - (pgpi->_chunk_addr - addr)) / PG_SIZE;
-
-	pgpi->_pgn_pool = malloc(sizeof(struct _pg_node) * pgpi->_chunk_pgcount);
-	if(!pgpi->_pgn_pool) goto error_ret;
-
-	pgpi->_flh = malloc(sizeof(struct _free_list_head) * pgpi->_cfg.freelist_count);
-	if(!pgpi->_flh) goto error_ret;
-
-	for(long i = 0; i < pgpi->_cfg.freelist_count; ++i)
-	{
-		lst_new(&pgpi->_flh[i]._free_list);
-	}
-
-	for(long i = 0; i < pgpi->_chunk_pgcount; ++i)
-	{
-		lst_clr(&pgpi->_pgn_pool[i]._free_pgn_node);
-		lst_push_back(&pgpi->_free_pgn_list, &pgpi->_pgn_pool[i]._free_pgn_node);
-	}
-
-	hd = pgpi->_chunk_addr - sizeof(struct _chunk_header);
+	hd = (struct _chunk_header*)addr;
 	if(hd->_chunck_label != PGP_CHUNK_LABEL)
-		rslt = _pgp_init_chunk(pgpi);
+		pgpi = _pgp_init_chunk(addr, size, cfg);
 	else
-		rslt = _pgp_load_chunk(pgpi);
+		pgpi = _pgp_load_chunk(addr, size);
 
-	if(rslt < 0) goto error_ret;
+	if(!pgpi) goto error_ret;
 
 	return &pgpi->_the_pool;
 error_ret:
@@ -395,16 +410,18 @@ void pgp_destroy(struct pgpool* pgp)
 
 	if(pgpi)
 	{
-		if(pgpi->_pgn_pool)
-			free(pgpi->_pgn_pool);
-		if(pgpi->_flh)
-			free(pgpi->_flh);
-		free(pgpi);
+		struct _chunk_header* hd = (struct _chunk_header*)(pgpi->_the_pool.addr_begin);
+		if(hd->_chunck_label == PGP_CHUNK_LABEL)
+		{
+			hd->_chunck_label = 0;
+			hd->_addr_begin = 0;
+			hd->_addr_end = 0;
+		}
 	}
 }
 
 
-void* pgp_alloc(struct pgpool* pgp, long size)
+void* pgp_alloc(struct pgpool* pgp, unsigned long size)
 {
 	void* payload;
 	long flh_idx, rslt, pg_count;

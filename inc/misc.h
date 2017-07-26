@@ -15,4 +15,5 @@ long quick_mmcpy_a(void* dst, void* src, long size);
 long quick_mmcpy_u(void* dst, void* src, long size);
 long quick_mmcpy(void* dst, void* src, long size);
 
+void* move_ptr_align8(void* ptr, unsigned long offset);
 #endif

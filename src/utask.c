@@ -82,6 +82,9 @@ struct utask* utsk_create(void* stack_ptr, long stack_size, task_function tfunc)
 	if(stack_size <= 0) goto error_ret;
 	if(!tfunc) goto error_ret;
 
+	if(((unsigned long)stack_ptr) & 0x7 != 0)
+		goto error_ret;
+
 	memset(tsk, 0, sizeof(struct _utask_impl));
 	tsk->_utsk.stk = stack_ptr;
 	tsk->_utsk.stk_size = stack_size;
