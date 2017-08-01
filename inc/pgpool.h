@@ -7,12 +7,8 @@ struct pgpool
 	void* addr_end;
 };
 
-struct pgpool_config
-{
-	unsigned long maxpg_count;
-};
-
-struct pgpool* pgp_create(void* addr, unsigned long size, struct pgpool_config* cfg);
+struct pgpool* pgp_create(void* addr, unsigned long size, unsigned long maxpg_count);
+struct pgpool* pgp_load(void* addr);
 void pgp_destroy(struct pgpool* up);
 
 void* pgp_alloc(struct pgpool* up, unsigned long size);

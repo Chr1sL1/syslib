@@ -7,13 +7,8 @@ struct mmpool
 	void* addr_end;
 };
 
-struct mmpool_config
-{
-	unsigned int min_block_index;
-	unsigned int max_block_index;
-};
-
-struct mmpool* mmp_create(void* addr, unsigned long size, struct mmpool_config* cfg);
+struct mmpool* mmp_create(void* addr, unsigned long size, unsigned int min_block_order, unsigned int max_block_order);
+struct mmpool* mmp_load(void* addr);
 void mmp_destroy(struct mmpool* mmp);
 
 void* mmp_alloc(struct mmpool* mmp, unsigned long size);

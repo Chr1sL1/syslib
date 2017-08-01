@@ -48,8 +48,8 @@ struct _free_list_head
 
 struct _pgp_cfg
 {
-	long maxpg_count;
-	long freelist_count;
+	unsigned long maxpg_count;
+	unsigned long freelist_count;
 };
 
 struct _pgpool_impl
@@ -163,7 +163,7 @@ error_ret:
 static inline long _link_rbn(struct _pgpool_impl* pgpi, struct _pg_node* pgn)
 {
 	rb_fillnew(&pgn->_rb_node);
-	pgn->_rb_node.key = (unsigned long)_get_payload(pgn);
+	pgn->_rb_node.key = _get_payload(pgn);
 
 	return rb_insert(&pgpi->_pgn_tree, &pgn->_rb_node);
 }
@@ -178,7 +178,7 @@ static inline struct _pg_node* _pgn_from_payload(struct _pgpool_impl* pgpi, void
 	struct rbnode* hot;
 	struct rbnode* rbn;
 
-	rbn = rb_search(&pgpi->_pgn_tree, (unsigned long)payload, &hot);
+	rbn = rb_search(&pgpi->_pgn_tree, payload, &hot);
 	if(!rbn) goto error_ret;
 
 	return _conv_rbn(rbn);
@@ -291,7 +291,7 @@ error_ret:
 	return -1;
 }
 
-static struct _pgpool_impl* _pgp_init_chunk(void* addr, unsigned long size, struct pgpool_config* cfg)
+static struct _pgpool_impl* _pgp_init_chunk(void* addr, unsigned long size, unsigned long maxpg_count)
 {
 	struct _pgpool_impl* pgpi;
 	struct _chunk_header* hd;
@@ -302,6 +302,9 @@ static struct _pgpool_impl* _pgp_init_chunk(void* addr, unsigned long size, stru
 
 	hd = (struct _chunk_header*)addr;
 	cur_offset = move_ptr_align8(addr, sizeof(struct _chunk_header));
+
+	if(hd->_chunck_label == PGP_CHUNK_LABEL)
+		goto error_ret;
 
 	hd->_chunck_label = PGP_CHUNK_LABEL;
 
@@ -317,8 +320,8 @@ static struct _pgpool_impl* _pgp_init_chunk(void* addr, unsigned long size, stru
 	lst_new(&pgpi->_free_pgn_list);
 	rb_init(&pgpi->_pgn_tree, 0);
 
-	pgpi->_cfg.maxpg_count = cfg->maxpg_count;
-	pgpi->_cfg.freelist_count = log_2(cfg->maxpg_count) + 1;
+	pgpi->_cfg.maxpg_count = maxpg_count;
+	pgpi->_cfg.freelist_count = log_2(maxpg_count) + 1;
 
 	pgpi->_flh = (struct _free_list_head*)cur_offset;
 	cur_offset += sizeof(struct _free_list_head) * pgpi->_cfg.freelist_count;
@@ -371,29 +374,55 @@ error_ret:
 	return 0;
 }
 
-static struct _pgpool_impl* _pgp_load_chunk(void* addr, unsigned long size)
+static struct _pgpool_impl* _pgp_load_chunk(void* addr)
 {
+	void* cur_offset;
+	struct _chunk_header* hd;
 	struct _pgpool_impl* pgpi;
+
+	hd = (struct _chunk_header*)addr;
+	cur_offset = move_ptr_align8(addr, sizeof(struct _chunk_header));
+
+	if(hd->_chunck_label != PGP_CHUNK_LABEL)
+		goto error_ret;
+
+	if(hd->_addr_begin != (unsigned long)addr)
+		goto error_ret;
+
+	pgpi = (struct _pgpool_impl*)cur_offset;
+	if(pgpi->_the_pool.addr_begin != addr)
+		goto error_ret;
 
 	return pgpi;
 error_ret:
 	return 0;
 }
 
-struct pgpool* pgp_create(void* addr, unsigned long size, struct pgpool_config* cfg)
+struct pgpool* pgp_create(void* addr, unsigned long size, unsigned long maxpg_count)
 {
 	long rslt = 0;
-	struct _chunk_header* hd;
 	struct _pgpool_impl* pgpi;
 
 	if(!addr || ((unsigned long)addr & 0x7 != 0) || size <= PG_SIZE) goto error_ret;
 
-	hd = (struct _chunk_header*)addr;
-	if(hd->_chunck_label != PGP_CHUNK_LABEL)
-		pgpi = _pgp_init_chunk(addr, size, cfg);
-	else
-		pgpi = _pgp_load_chunk(addr, size);
+	pgpi = _pgp_init_chunk(addr, size, maxpg_count);
+	if(!pgpi) goto error_ret;
 
+	return &pgpi->_the_pool;
+error_ret:
+	if(pgpi)
+		pgp_destroy(&pgpi->_the_pool);
+
+	return 0;
+}
+
+struct pgpool* pgp_load(void* addr)
+{
+	struct _pgpool_impl* pgpi;
+
+	if(!addr || ((unsigned long)addr & 0x7 != 0)) goto error_ret;
+
+	pgpi = _pgp_load_chunk(addr);
 	if(!pgpi) goto error_ret;
 
 	return &pgpi->_the_pool;

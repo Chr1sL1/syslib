@@ -14,7 +14,9 @@
 #include "misc.h"
 #include "mmpool.h"
 #include "pgpool.h"
+#include "uma.h"
 #include "ringbuf.h"
+#include "mmzone.h"
 #include "ipc.h"
 #include <signal.h>
 #include <unistd.h>
@@ -27,6 +29,7 @@ long test_arr[10];
 
 char* mmp_buf;
 char* pgp_buf;
+char* zone_buf;
 
 long running = 0;
 
@@ -267,7 +270,6 @@ long test_mmp(long total_size, long min_block_idx, long max_block_idx, long node
 	struct mmpool* mp = 0;
 	struct mem_test_entry te[node_count];
 	struct timeval tv;
-	struct mmpool_config cfg;
 	struct shmm_blk* sbo = 0;
 
 //	struct shmm_blk* sb = shmm_new("/dev/null", 27, total_size, 0);
@@ -277,14 +279,10 @@ long test_mmp(long total_size, long min_block_idx, long max_block_idx, long node
 //		goto error_ret;
 //	}
 
-	cfg.min_block_index = min_block_idx;
-	cfg.max_block_index = max_block_idx;
-
-
 	mmp_buf = malloc(total_size);
 	if(!mmp_buf) goto error_ret;
 
-	mp = mmp_create(mmp_buf, total_size, &cfg);
+	mp = mmp_create(mmp_buf, total_size, min_block_idx, max_block_idx);
 	if(!mp) goto error_ret;
 
 	min_block_size = 1 << min_block_idx;
@@ -404,31 +402,12 @@ long test_pgp(long total_size, long maxpg_count, long node_count)
 	struct pgpool* mp = 0;
 	struct mem_test_entry te[node_count];
 	struct timeval tv;
-	struct pgpool_config cfg;
 	struct shmm_blk* sbo = 0;
 	long shmm_channel = 18;
 
-//	struct shmm_blk* sb = shmm_new("/dev/null", shmm_channel, total_size, 0);
-//	if(!sb)
-//	{
-//		perror(strerror(errno));
-//		goto error_ret;
-//	}
-//
-//
-//	sbo = shmm_open("/dev/null", shmm_channel);
-//	if(!sbo)
-//	{
-//		perror(strerror(errno));
-//		goto error_ret;
-//	}
-//	shmm_close(&sbo);
-
-	cfg.maxpg_count = maxpg_count;
-
 	mm_buf = malloc(total_size + 1024);
 
-	mp = pgp_create(mm_buf, total_size, &cfg);
+	mp = pgp_create(mm_buf, total_size, maxpg_count);
 	if(!mp) goto error_ret;
 
 	for(long i = 0; i < node_count; ++i)
@@ -527,6 +506,124 @@ error_ret:
 	return -1;
 }
 
+
+long test_uma(long total_size, long obj_size, long node_count)
+{
+	long rslt = 0;
+	void* mm_buf = 0;
+	unsigned long now_time = 0;
+	unsigned long loop_count = 0;
+	unsigned long restart_alloc_time = 0;
+	long req_total_size = 0;
+	long enable_alloc = 1;
+	struct uma* mp = 0;
+	struct mem_test_entry te[node_count];
+	struct timeval tv;
+	struct shmm_blk* sbo = 0;
+	long shmm_channel = 18;
+
+	mm_buf = malloc(total_size + 1024);
+
+	mp = uma_create(mm_buf, total_size, obj_size);
+	if(!mp) goto error_ret;
+
+	for(long i = 0; i < node_count; ++i)
+	{
+		te[i]._size = obj_size;
+		te[i]._block = 0;
+		te[i]._usage_duration = random() % 200;
+		te[i]._alloc_time = 0;
+
+		req_total_size += te[i]._size;
+	}
+
+	printf("req_total_size : %ld\n", req_total_size);
+	running = 1;
+
+	struct sigaction sa;
+	sa.sa_sigaction = signal_stop;
+	sa.sa_flags = SA_SIGINFO;
+	sigaction(SIGINT, &sa, 0);
+
+	while(running)
+	{
+		gettimeofday(&tv, 0);
+		now_time = tv.tv_sec * 1000000 + tv.tv_usec;
+		loop_count++;
+
+		for(long i = 0; i < node_count; ++i)
+		{
+			if(enable_alloc)
+			{
+				if(te[i]._alloc_time == 0)
+				{
+					printf("--- alloc [%ld], idx: %ld, duration: %ld, loop_count: %ld\n", te[i]._size, i, te[i]._usage_duration, loop_count);
+
+					te[i]._block = uma_alloc(mp);
+					if(!te[i]._block)
+					{
+						printf("alloc error, loopcount: %ld, idx: %ld, reqsize: %ld.\n", loop_count, i, te[i]._size);
+						enable_alloc = 0;
+						restart_alloc_time = now_time + 2000;
+					}
+					else
+					{
+						te[i]._alloc_time = now_time;
+
+
+//						if(uma_check(mp) < 0)
+//							goto error_ret;
+
+					}
+				}
+			}
+			else if(restart_alloc_time > now_time)
+			{
+				enable_alloc = 1;
+				restart_alloc_time = 0;
+			}
+
+
+			if(te[i]._alloc_time + te[i]._usage_duration < now_time)
+			{
+				printf("--- free [%ld], idx: %ld, loop_count: %ld.\n", te[i]._size, i, loop_count);
+
+				rslt = uma_free(mp, te[i]._block);
+				if(rslt < 0)
+				{
+					printf("free error, loopcount: %ld, idx: %ld.\n", loop_count, i);
+					goto error_ret;
+				}
+
+				te[i]._alloc_time = 0;
+
+//				if(uma_check(mp) < 0)
+//					goto error_ret;
+			}
+
+
+		}
+		if(rslt < 0) goto error_ret;
+loop_continue:
+		usleep(10);
+	}
+
+	uma_destroy(mp);
+//	shmm_del(&sb);
+	printf("test uma successed.\n");
+	return 0;
+error_ret:
+	if(mp)
+		uma_check(mp);
+
+//	if(sb)
+//		shmm_del(&sb);
+
+	printf("test uma failed.\n");
+	return -1;
+}
+
+
 long profile_mmpool(void)
 {
 	long rslt = 0;
@@ -540,11 +637,8 @@ long profile_mmpool(void)
 	unsigned long count = 1000;
 
 	mmp_buf = malloc(size);
-	struct mmpool_config cfg;
-	cfg.min_block_index = 6;
-	cfg.max_block_index = 10;
 
-	struct mmpool* pool = mmp_create(mmp_buf, size, &cfg);
+	struct mmpool* pool = mmp_create(mmp_buf, size, 6, 10);
 
 	if(!pool) goto error_ret;
 
@@ -603,10 +697,7 @@ long profile_pgpool(void)
 
 	pgp_buf = malloc(size);
 
-	struct pgpool_config cfg;
-	cfg.maxpg_count = 1024;
-
-	struct pgpool* pool = pgp_create(pgp_buf, size, &cfg);
+	struct pgpool* pool = pgp_create(pgp_buf, size, 1024);
 
 	if(!pool) goto error_ret;
 
@@ -652,6 +743,72 @@ long profile_pgpool(void)
 error_ret:
 	return -1;
 }
+
+long profile_uma(void)
+{
+	long rslt = 0;
+	unsigned int size = 200 * 1024;
+	long rnd = 0;
+	unsigned long r1 = 0, r2 = 0;
+
+	unsigned long tmp = 0;
+	unsigned long alloc_sum = 0, free_sum = 0;
+	unsigned long alloc_max = 0, free_max = 0;
+	unsigned long count = 1000;
+
+	mmp_buf = malloc(size);
+
+	struct uma* pool = uma_create(mmp_buf, size, 100);
+
+	if(!pool) goto error_ret;
+
+	for(long i = 0; i < count; i++)
+	{
+		rnd = random() % 1024;
+
+		if(rnd <= 0)
+			continue;
+
+		r1 = rdtsc();
+		void* p = uma_alloc(pool);
+		r2 = rdtsc();
+
+		tmp = r2 - r1;
+		alloc_sum += tmp;
+		if(tmp > alloc_max)
+			alloc_max = tmp;
+
+		if(!p)
+			printf("alloc errrrrrrrrrrrrrrrrror.\n");
+
+		r1 = rdtsc();
+		rslt = uma_free(pool, p);
+		r2 = rdtsc();
+
+		if(rslt < 0)
+			printf("free errrrrrrrrrrrrrrrrror.\n");
+
+		tmp = r2 - r1;
+		free_sum += tmp;
+		if(tmp > free_max)
+			free_max = tmp;
+	}
+
+	printf("[avg] alloc cycle: %lu, free cycle: %lu.\n", alloc_sum / count, free_sum / count);
+	printf("[max] alloc cycle: %lu, free cycle: %lu.\n", alloc_max, free_max);
+
+	rslt = uma_check(pool);
+	if(rslt < 0)
+		printf("uma_check errrrrrrrrrrrrrrrrrrror.\n");
+
+
+	uma_destroy(pool);
+
+	return 0;
+error_ret:
+	return -1;
+}
+
 
 unsigned int at2f(unsigned v)
 {
@@ -977,6 +1134,33 @@ void test_ipc(void)
 	}
 }
 
+void dbg_zone(unsigned long size)
+{
+	void* p;
+	long rslt;
+	struct mm_zone* mmz;
+	struct mm_zone_config cfg;
+	zone_buf = malloc(size);
+
+	cfg.uma_cfg.obj_size = 198;
+
+	mmz = mmz_create(MMZ_FIXED_BLOCK, zone_buf, zone_buf + size, &cfg);
+	if(!mmz) goto error_ret;
+
+	p = mmz_alloc(mmz, 0);
+	if(!p) goto error_ret;
+
+	rslt = mmz_free(mmz, p);
+	if(rslt < 0) goto error_ret;
+
+	mmz_destroy(mmz);
+
+	return;
+error_ret:
+	return;
+}
+
+
 #define dbg(format, ...) printf(format, __VA_ARGS__)
 
 int main(void)
@@ -987,6 +1171,8 @@ int main(void)
 //	unsigned long seed = 0;//time(0);
 	unsigned long seed = 0;//time(0);
 	srandom(seed);
+
+	dbg_zone(1024 * 1024);
 
 //	dbg("%lu,%lu\n", is_2power(129), is_2power(64));
 
@@ -1001,7 +1187,11 @@ int main(void)
 
 //	profile_pgpool();
 
-	test_pgp(50 * 1024 * 1024, 100, 64);
+//	test_pgp(50 * 1024 * 1024, 100, 64);
+
+//	profile_uma();
+
+//	test_uma(50 * 1024 * 1024, 100, 64);
 
 //	test_mmp(100 * 1024, 6, 10, 64);
 

@@ -2,11 +2,9 @@
 #include <string.h>
 
 
-long quick_mmcpy(void* dst, void* src, long size)
+long quick_mmcpy(void* dst, void* src, unsigned long size)
 {
-	if(size <= 0) goto error_ret;
-
-	long s1 = size - ((long)align16((void*)size) - 16);
+	long s1 = size - ((long)align16(size) - 16);
 	if(s1 > 0)
 	{
 		memcpy(dst, src, s1);

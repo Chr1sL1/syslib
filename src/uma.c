@@ -1,10 +1,9 @@
 #include "uma.h"
 #include "dlist.h"
-#include <stdlib.h>
+#include "misc.h"
 
 #define UMA_LABEL (0xeded00122100dedeUL)
 #define UMA_OBJ_LABEL (0xabcd7890)
-#define ALIGN (8)
 
 #define UFB_USED (1)
 
@@ -13,8 +12,8 @@
 struct _uma_header
 {
 	unsigned long _chunk_label;
-	unsigned long _chunk_size;
-	unsigned long _obj_size;
+	unsigned long _addr_begin;
+	unsigned long _addr_end;
 };
 
 #pragma pack()
@@ -37,9 +36,8 @@ struct _uma_impl
 	struct dlist _free_list;
 
 	void* _chunk_addr;
-	void* _chunk_end;
 
-	unsigned long _obj_size;
+	unsigned long _actual_obj_size;
 	unsigned long _obj_count;
 
 	struct _uma_node* _node_pool;
@@ -79,10 +77,10 @@ static inline struct _uma_node* _get_node_from_obj(struct _uma_impl* umi, void* 
 {
 	unsigned long idx;
 
-	if(uoh < umi->_chunk_addr || uoh > umi->_chunk_end)
+	if(uoh < umi->_chunk_addr || uoh > umi->_the_uma.addr_end)
 		goto error_ret;
 
-	idx = (uoh - umi->_chunk_addr) / umi->_obj_size;
+	idx = (uoh - umi->_chunk_addr) / umi->_actual_obj_size;
 	if(idx >= umi->_obj_count)
 		goto error_ret;
 
@@ -113,36 +111,44 @@ struct uma* uma_create(void* addr, unsigned long size, unsigned long obj_size)
 {
 	struct _uma_impl* umi;
 	struct _uma_header* hd;
+	void* cur_pos;
 	unsigned long chunk_size;
 
-	if(!addr) goto error_ret;
+	if(!addr || ((unsigned long)addr & 7 != 0)) goto error_ret;
+	if(size <= sizeof(struct _uma_header) + sizeof(struct _uma_impl))
+		goto error_ret;
 
-	umi = malloc(sizeof(struct _uma_header));
-	if(!umi) goto error_ret;
+	hd = (struct _uma_header*)addr;
+	if(hd->_chunk_label == UMA_LABEL)
+		goto error_ret;
 
-	umi->_the_uma.addr = addr;
-	umi->_chunk_addr = (void*)((unsigned long)(addr + sizeof(struct _uma_header) + (ALIGN - 1)) & ~(ALIGN - 1));
-
-	hd = (struct _uma_header*)(umi->_chunk_addr - sizeof(struct _uma_header));
-
-	umi->_obj_size = (obj_size + (ALIGN - 1)) & ~(ALIGN - 1) + sizeof(struct _uma_obj_header);
-	chunk_size = size - (umi->_the_uma.addr - addr);
-	umi->_obj_count = chunk_size / umi->_obj_size;
-
-	umi->_chunk_end = umi->_chunk_addr + umi->_obj_size * (umi->_obj_count - 1);
+	cur_pos = move_ptr_align8(addr, sizeof(struct _uma_header));
 
 	hd->_chunk_label = UMA_LABEL;
-	hd->_chunk_size = chunk_size;
-	hd->_obj_size = umi->_obj_size;
+	hd->_addr_begin = (unsigned long)addr;
+	hd->_addr_end = (unsigned long)addr + size;
 
-	umi->_node_pool = malloc(sizeof(struct _uma_node) * umi->_obj_count);
-	if(!umi) goto error_ret;
+	umi = (struct _uma_impl*)cur_pos;
+	cur_pos = move_ptr_align8(cur_pos, sizeof(struct _uma_impl));
+
+	umi->_the_uma.addr_begin = addr;
+	umi->_the_uma.addr_end = addr + size;
+
+	umi->_the_uma.obj_size = obj_size;
+	umi->_actual_obj_size = (obj_size + sizeof(struct _uma_obj_header) + 7) & ~7;
+
+	umi->_obj_count = (umi->_the_uma.addr_end - cur_pos) / (sizeof(struct _uma_node) + umi->_actual_obj_size);
+
+	umi->_node_pool = (struct _uma_node*)cur_pos;
+	cur_pos = move_ptr_align8(cur_pos, sizeof(struct _uma_node) * umi->_obj_count);
+
+	umi->_chunk_addr = cur_pos;
 
 	lst_new(&umi->_free_list);
 
 	for(unsigned long i = 0; i < umi->_obj_count; ++i)
 	{
-		struct _uma_obj_header* uoh = (struct _uma_obj_header*)(umi->_chunk_addr + i * umi->_obj_size);
+		struct _uma_obj_header* uoh = (struct _uma_obj_header*)(umi->_chunk_addr + i * umi->_actual_obj_size);
 		uoh->_obj_label = UMA_OBJ_LABEL;
 		uoh->_obj_flag = 0;
 
@@ -164,56 +170,37 @@ struct uma* uma_load(void* addr)
 	struct _uma_impl* umi;
 	struct _uma_header* hd;
 
-	if(!addr) goto error_ret;
+	if(!addr || ((unsigned long)addr & 7 != 0)) goto error_ret;
 
-	umi = malloc(sizeof(struct _uma_header));
-	if(!umi) goto error_ret;
+	hd = (struct _uma_header*)addr;
+	if(hd->_chunk_label != UMA_LABEL)
+		goto error_ret;
 
-	umi->_the_uma.addr = addr;
-	umi->_chunk_addr = (void*)((unsigned long)(addr + sizeof(struct _uma_header) + (ALIGN - 1)) & ~(ALIGN - 1));
+	if(hd->_addr_begin != (unsigned long)addr || hd->_addr_begin >= hd->_addr_end)
+		goto error_ret;
 
-	hd = (struct _uma_header*)(umi->_chunk_addr - sizeof(struct _uma_header));
+	umi = (struct _uma_impl*)(addr + sizeof(struct _uma_header));
 
-	if(hd->_chunk_label != UMA_LABEL) goto error_ret;
-	umi->_obj_size = hd->_obj_size;
-	umi->_obj_count = hd->_chunk_size / umi->_obj_size;
-	umi->_chunk_end = umi->_chunk_addr + umi->_obj_size * (umi->_obj_count - 1);
-
-	umi->_node_pool = malloc(sizeof(struct _uma_node) * umi->_obj_count);
-	if(!umi) goto error_ret;
-
-	lst_new(&umi->_free_list);
-
-	for(unsigned long i = 0; i < umi->_obj_count; ++i)
-	{
-		struct _uma_obj_header* uoh = (struct _uma_obj_header*)(umi->_chunk_addr + i * umi->_obj_size);
-		if(uoh->_obj_label != UMA_OBJ_LABEL)
-			goto error_ret;
-
-		if(uoh->_obj_flag & UFB_USED == 0)
-		{
-			umi->_node_pool[i]._obj = uoh;
-			lst_clr(&umi->_node_pool[i]._fln);
-			lst_push_back(&umi->_free_list, &umi->_node_pool[i]._fln);
-		}
-	}
-
+	return &umi->_the_uma;
 error_ret:
-	if(umi)
-		uma_destroy(&umi->_the_uma);
 	return 0;
 }
 
-void uma_destroy(struct uma* mm)
+long uma_destroy(struct uma* mm)
 {
 	struct _uma_impl* umi = _conv_impl(mm);
-	if(umi)
-	{
-		if(umi->_node_pool)
-			free(umi->_node_pool);
+	struct _uma_header* hd = (struct _uma_header*)umi->_the_uma.addr_begin;
 
-		free(umi);
-	}
+	if(hd->_chunk_label != UMA_LABEL)
+		goto error_ret;
+
+	hd->_chunk_label = 0;
+	hd->_addr_begin = 0;
+	hd->_addr_end = 0;
+
+	return 0;
+error_ret:
+	return -1;
 }
 
 void* uma_alloc(struct uma* mm)
@@ -261,4 +248,25 @@ long uma_free(struct uma* mm, void* p)
 error_ret:
 	return -1;
 }
+
+long uma_check(struct uma* mm)
+{
+	struct _uma_impl* umi = _conv_impl(mm);
+
+	for(long i = 0; i < umi->_obj_count; ++i)
+	{
+		struct _uma_node* node = &umi->_node_pool[i];
+
+		if(node->_obj->_obj_label != UMA_OBJ_LABEL)
+			goto error_ret;
+
+		if((node->_obj->_obj_flag & UFB_USED) != 0)
+			goto error_ret;
+	}
+
+	return 0;
+error_ret:
+	return -1;
+}
+
 

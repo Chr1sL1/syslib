@@ -11,9 +11,9 @@ long is_2power(unsigned long val);
 unsigned long align8(unsigned long val);
 unsigned long align16(unsigned long val);
 
-long quick_mmcpy_a(void* dst, void* src, long size);
-long quick_mmcpy_u(void* dst, void* src, long size);
-long quick_mmcpy(void* dst, void* src, long size);
+long quick_mmcpy_a(void* dst, void* src, unsigned long size);
+long quick_mmcpy_u(void* dst, void* src, unsigned long size);
+long quick_mmcpy(void* dst, void* src, unsigned long size);
 
 void* move_ptr_align8(void* ptr, unsigned long offset);
 #endif

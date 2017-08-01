@@ -70,8 +70,8 @@ struct _free_list_head
 
 struct _mmpool_cfg
 {
-	long _min_block_idx;
-	long _max_block_idx;
+	unsigned int _min_block_order;
+	unsigned int _max_block_order;
 
 	long _free_list_count;
 	long _min_payload_size;
@@ -101,8 +101,8 @@ static long _return_free_node_to_head(struct _mmpool_impl* mmpi, struct _block_h
 static long _return_free_node_to_tail(struct _mmpool_impl* mmpi, struct _block_head* hd);
 static long _take_free_node(struct _mmpool_impl* mmpi, long flh_idx, struct _block_head** bh);
 
-static struct _mmpool_impl* _mmp_init_chunk(struct mmpool_config* cfg, void* addr, unsigned long size);
-static struct _mmpool_impl* _mmp_load_chunk(void* addr, unsigned long size);
+static struct _mmpool_impl* _mmp_init_chunk(void* addr, unsigned long size, unsigned int min_block_order, unsigned int max_block_order);
+static struct _mmpool_impl* _mmp_load_chunk(void* addr);
 
 static inline long _block_size(long idx)
 {
@@ -126,12 +126,12 @@ static inline long _block_size_by_payload(long payload_size)
 
 static inline long _block_size_by_idx(struct _mmpool_impl* mmpi, long free_list_idx)
 {
-	return _block_size(mmpi->_cfg._min_block_idx) * (1 << free_list_idx);
+	return _block_size(mmpi->_cfg._min_block_order) * (1 << free_list_idx);
 }
 
 static inline struct _free_list_head* _get_flh(struct _mmpool_impl* mmpi, struct _block_head* bh)
 {
-	long idx = log_2(bh->_block_size) - mmpi->_cfg._min_block_idx;
+	long idx = log_2(bh->_block_size) - mmpi->_cfg._min_block_order;
 
 	if(idx >= mmpi->_cfg._free_list_count) goto error_ret;
 
@@ -205,14 +205,14 @@ static inline long _normalize_block_size(long payload_size)
 static inline long _flh_idx(struct _mmpool_impl* mmpi, long payload_size)
 {
 	long blk_size = _normalize_block_size(payload_size);
-	long min_blk_size = _block_size(mmpi->_cfg._min_block_idx);
+	long min_blk_size = _block_size(mmpi->_cfg._min_block_order);
 
-	if(blk_size > _block_size(mmpi->_cfg._max_block_idx)) goto error_ret;
+	if(blk_size > _block_size(mmpi->_cfg._max_block_order)) goto error_ret;
 
 	if(blk_size < min_blk_size)
 		blk_size = min_blk_size;
 
-	return log_2(blk_size) - mmpi->_cfg._min_block_idx;
+	return log_2(blk_size) - mmpi->_cfg._min_block_order;
 error_ret:
 	return -1;
 }
@@ -264,9 +264,9 @@ static long _return_free_node_to_head(struct _mmpool_impl* mmpi, struct _block_h
 	struct _free_list_node* fln;
 
 	if((hd->_flag & BLOCK_BIT_USED) != 0) goto error_ret;
-	if(hd->_block_size > _block_size(mmpi->_cfg._max_block_idx)) goto error_ret;
+	if(hd->_block_size > _block_size(mmpi->_cfg._max_block_order)) goto error_ret;
 
-	flh_idx = log_2(hd->_block_size) - mmpi->_cfg._min_block_idx;
+	flh_idx = log_2(hd->_block_size) - mmpi->_cfg._min_block_order;
 
 	fln = _fetch_free_fln(mmpi);
 	if(!fln) goto error_ret;
@@ -291,9 +291,9 @@ static long _return_free_node_to_tail(struct _mmpool_impl* mmpi, struct _block_h
 	struct _free_list_node* fln;
 
 	if((hd->_flag & BLOCK_BIT_USED) != 0) goto error_ret;
-	if(hd->_block_size > _block_size(mmpi->_cfg._max_block_idx)) goto error_ret;
+	if(hd->_block_size > _block_size(mmpi->_cfg._max_block_order)) goto error_ret;
 
-	flh_idx = log_2(hd->_block_size) - mmpi->_cfg._min_block_idx;
+	flh_idx = log_2(hd->_block_size) - mmpi->_cfg._min_block_order;
 
 	fln = _fetch_free_fln(mmpi);
 	if(!fln) goto error_ret;
@@ -378,7 +378,7 @@ static long _try_spare_block(struct _mmpool_impl* mmpi, struct _block_head* bh, 
 	if(offset > 0)
 		offset = align_to_2power_floor(offset);
 
-	if(offset >= _block_size(mmpi->_cfg._min_block_idx))
+	if(offset >= _block_size(mmpi->_cfg._min_block_order))
 	{
 		h = _make_block(end - offset, offset);
 		h->_flag |= BLOCK_BIT_UNM_SUC;
@@ -426,7 +426,7 @@ static long _merge_free_blocks(struct _mmpool_impl* mmpi, struct _block_head* bh
 	rslt = _unlink_block(mmpi, bh);
 	if(rslt < 0) goto error_ret;
 
-	while(count < max_count && block_size < _block_size(mmpi->_cfg._max_block_idx))
+	while(count < max_count && block_size < _block_size(mmpi->_cfg._max_block_order))
 	{
 		struct _block_head* nbh = _next_block(bh);
 		if(nbh->_flag != 0) break;
@@ -582,7 +582,7 @@ error_ret:
 	return -1;
 }
 
-static struct _mmpool_impl* _mmp_init_chunk(struct mmpool_config* cfg, void* addr, unsigned long size)
+static struct _mmpool_impl* _mmp_init_chunk(void* addr, unsigned long size, unsigned int min_block_order, unsigned int max_block_order)
 {
 	void* chk1;
 	void* chk2 = 0;
@@ -596,13 +596,15 @@ static struct _mmpool_impl* _mmp_init_chunk(struct mmpool_config* cfg, void* add
 	struct _mmpool_impl* mmpi;
 
 	struct _chunk_head* hd = (struct _chunk_head*)(addr);
-
 	cur_section = move_ptr_align8(addr, sizeof(struct _chunk_head));
+
+	if(hd->_chunck_label == CHUNK_LABEL)
+		goto error_ret;
 
 	hd->_chunck_label = CHUNK_LABEL;
 
-	min_block_size = 1 << cfg->min_block_index;
-	max_block_size = 1 << cfg->max_block_index;
+	min_block_size = 1 << min_block_order;
+	max_block_size = 1 << max_block_order;
 
 	if(min_block_size > max_block_size)
 		goto error_ret;
@@ -619,9 +621,9 @@ static struct _mmpool_impl* _mmp_init_chunk(struct mmpool_config* cfg, void* add
 	hd->_addr_begin = (unsigned long)mmpi->_pool.addr_begin;
 	hd->_addr_end = (unsigned long)mmpi->_pool.addr_end;
 
-	mmpi->_cfg._min_block_idx = cfg->min_block_index;
-	mmpi->_cfg._max_block_idx = cfg->max_block_index;
-	mmpi->_cfg._free_list_count = cfg->max_block_index - cfg->min_block_index + 1;
+	mmpi->_cfg._min_block_order = min_block_order;
+	mmpi->_cfg._max_block_order = max_block_order;
+	mmpi->_cfg._free_list_count = max_block_order - min_block_order + 1;
 	mmpi->_cfg._min_payload_size = min_block_size - HEAD_TAIL_SIZE;
 	mmpi->_cfg._max_payload_size = max_block_size - HEAD_TAIL_SIZE;
 
@@ -629,7 +631,7 @@ static struct _mmpool_impl* _mmp_init_chunk(struct mmpool_config* cfg, void* add
 	cur_section = move_ptr_align8(cur_section, mmpi->_cfg._free_list_count * sizeof(struct _free_list_head));
 
 	mmpi->_fln_pool = (struct _free_list_node*)(cur_section);
-	mmpi->_fln_count = (mmpi->_pool.addr_end - cur_section) / align8(_block_size(cfg->min_block_index) + sizeof(struct _free_list_node));
+	mmpi->_fln_count = (mmpi->_pool.addr_end - cur_section) / align8(_block_size(min_block_order) + sizeof(struct _free_list_node));
 
 	cur_section = move_ptr_align8(cur_section, mmpi->_fln_count * sizeof(struct _free_list_node));
 
@@ -652,7 +654,7 @@ static struct _mmpool_impl* _mmp_init_chunk(struct mmpool_config* cfg, void* add
 	if(cur_section >= mmpi->_pool.addr_end) goto error_ret;
 
 	mmpi->_chunk_addr = cur_section;
-	mmpi->_chunk_size = (mmpi->_pool.addr_end - cur_section) & (-_block_size(mmpi->_cfg._max_block_idx));
+	mmpi->_chunk_size = (mmpi->_pool.addr_end - cur_section) & (-_block_size(mmpi->_cfg._max_block_order));
 
 	end = mmpi->_chunk_addr + mmpi->_chunk_size;
 	chk1 = mmpi->_chunk_addr;
@@ -678,7 +680,7 @@ error_ret:
 	return 0;
 }
 
-static struct _mmpool_impl* _mmp_load_chunk(void* addr, unsigned long size)
+static struct _mmpool_impl* _mmp_load_chunk(void* addr)
 {
 	void* chk;
 	void* end;
@@ -691,6 +693,7 @@ static struct _mmpool_impl* _mmp_load_chunk(void* addr, unsigned long size)
 
 	struct _chunk_head* chd = (struct _chunk_head*)(addr);
 	if(chd->_chunck_label != CHUNK_LABEL) goto error_ret;
+	if(chd->_addr_begin != (unsigned long)addr) goto error_ret;
 
 	cur_section = move_ptr_align8(addr, sizeof(struct _chunk_head));
 
@@ -704,9 +707,8 @@ error_ret:
 	return 0;
 }
 
-struct mmpool* mmp_create(void* addr, unsigned long size, struct mmpool_config* cfg)
+struct mmpool* mmp_create(void* addr, unsigned long size, unsigned int min_block_order, unsigned int max_block_order)
 {
-	struct _chunk_head* ch = 0;
 	struct _mmpool_impl* mmpi = 0;
 	long result = 0;
 
@@ -714,15 +716,10 @@ struct mmpool* mmp_create(void* addr, unsigned long size, struct mmpool_config* 
 
 	// chunk must be 8-byte aligned.
 	if((((unsigned long)addr) & 0x7) != 0) goto error_ret;
-	if(size < _block_size(cfg->min_block_index)) goto error_ret;
+	if(size < _block_size(min_block_order)) goto error_ret;
 	if(size > 0xFFFFFFFF) goto error_ret;
 
-	ch = (struct _chunk_head*)addr;
-
-	if(ch->_chunck_label == CHUNK_LABEL)
-		mmpi = _mmp_load_chunk(addr, size);
-	else
-		mmpi = _mmp_init_chunk(cfg, addr, size);
+	mmpi = _mmp_init_chunk(addr, size, min_block_order, max_block_order);
 
 	if(!mmpi) goto error_ret;
 
@@ -730,6 +727,21 @@ struct mmpool* mmp_create(void* addr, unsigned long size, struct mmpool_config* 
 
 error_ret:
 
+	return 0;
+}
+
+struct mmpool* mmp_load(void* addr)
+{
+	struct _mmpool_impl* mmpi;
+
+	if((((unsigned long)addr) & 0x7) != 0) goto error_ret;
+
+	mmpi = _mmp_load_chunk(addr);
+
+	if(!mmpi) goto error_ret;
+
+	return &mmpi->_pool;
+error_ret:
 	return 0;
 }
 
@@ -802,7 +814,7 @@ long mmp_free(struct mmpool* mmp, void* p)
 	if((bh->_flag & BLOCK_BIT_USED) == 0) goto error_ret;
 	bh->_flag ^= BLOCK_BIT_USED;
 
-	max_block_size = _block_size(mmpi->_cfg._max_block_idx);
+	max_block_size = _block_size(mmpi->_cfg._max_block_order);
 	while(bh->_block_size < max_block_size)
 	{
 		ret_bh = _merge_buddy_next(mmpi, bh, _next_block(bh));
