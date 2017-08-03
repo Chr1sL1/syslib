@@ -77,7 +77,7 @@ static inline struct _uma_node* _get_node_from_obj(struct _uma_impl* umi, void* 
 {
 	unsigned long idx;
 
-	if(uoh < umi->_chunk_addr || uoh > umi->_the_uma.addr_end)
+	if(uoh < umi->_chunk_addr || uoh >= umi->_the_uma.addr_end)
 		goto error_ret;
 
 	idx = (uoh - umi->_chunk_addr) / umi->_actual_obj_size;

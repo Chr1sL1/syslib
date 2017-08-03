@@ -27,13 +27,13 @@ struct ipc_peer* ipc_create(long channel_id, long buffer_size, long use_huge_tlb
 	ipi = malloc(sizeof(struct _ipc_peer_impl));
 	if(!ipi) goto error_ret;
 
-	ipi->_shb = shmm_new("/dev/null", channel_id, buffer_size, use_huge_tlb);
+	ipi->_shb = shmm_create("/dev/null", channel_id, buffer_size, use_huge_tlb);
 	if(!ipi->_shb) goto error_ret;
 
-	rslt = rbuf_new(ipi->_shb->addr, ipi->_shb->size);
+	rslt = rbuf_new(ipi->_shb->addr_begin, ipi->_shb->addr_end - ipi->_shb->addr_begin);
 	if(rslt < 0) goto error_ret;
 
-	ipi->_rb = rbuf_open(ipi->_shb->addr);
+	ipi->_rb = rbuf_open(ipi->_shb->addr_begin);
 	if(!ipi->_rb) goto error_ret;
 
 	ipi->_the_peer.channel_id = channel_id;
@@ -51,7 +51,7 @@ error_ret:
 		if(ipi->_shb)
 		{
 			shmm_close(&ipi->_shb);
-			shmm_del(&ipi->_shb);
+			shmm_destroy(&ipi->_shb);
 		}
 
 		free(ipi);
@@ -73,7 +73,7 @@ struct ipc_peer* ipc_link(long channel_id)
 	ipi->_shb = shmm_open("/dev/null", channel_id, 0);
 	if(!ipi->_shb) goto error_ret;
 
-	ipi->_rb = rbuf_open(ipi->_shb->addr);
+	ipi->_rb = rbuf_open(ipi->_shb->addr_begin);
 	if(!ipi->_rb) goto error_ret;
 
 	ipi->_the_peer.channel_id = channel_id;
@@ -124,7 +124,7 @@ long ipc_destroy(struct ipc_peer** pr)
 		goto error_ret;
 
 	rbuf_del(&ipi->_rb);
-	shmm_del(&ipi->_shb);
+	shmm_destroy(&ipi->_shb);
 
 	free(*pr);
 	*pr = 0;

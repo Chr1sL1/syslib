@@ -2,11 +2,18 @@
 #include <string.h>
 #include <stdlib.h>
 #include <sys/shm.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
 
 #define SHMM_MID_PAGE_THRESHOLD		(1 << 18)
 #define SHMM_HUGE_PAGE_THRESHOLD	(1 << 28)
 
 #define SHMM_TAG					(0x1234567890abcdef)
+
+#define SHM_PAGE_SHIFT				(12)
+#define SHM_PAGE_SIZE				(1 << SHM_PAGE_SHIFT)
 
 #define SHM_HUGE_SHIFT				(26)
 #define SHM_HUGE_2MB				(21 << SHM_HUGE_SHIFT)
@@ -16,15 +23,17 @@
 struct _shmm_blk_head
 {
 	unsigned long _shmm_tag;
-	long _shmm_size;
+	unsigned long _addr_begin;
+	unsigned long _addr_end;
+	long _the_key;
 };
 #pragma pack()
 
 struct _shmm_blk_impl
 {
 	struct shmm_blk _the_blk;
-	long _the_key;
-	long _fd;
+	int _fd;
+	int _file_fd;
 };
 
 static inline struct _shmm_blk_impl* _conv_blk(struct shmm_blk* blk)
@@ -32,7 +41,7 @@ static inline struct _shmm_blk_impl* _conv_blk(struct shmm_blk* blk)
 	return (struct _shmm_blk_impl*)((unsigned long)blk - (unsigned long)&(((struct _shmm_blk_impl*)(0))->_the_blk));
 }
 
-struct shmm_blk* shmm_new(const char* shmm_name, long channel, long size, long try_huge_page)
+struct shmm_blk* shmm_create(const char* shmm_name, long channel, unsigned long size, long try_huge_page)
 {
 	int flag = 0;
 	void* ret_addr = 0;
@@ -42,10 +51,13 @@ struct shmm_blk* shmm_new(const char* shmm_name, long channel, long size, long t
 		goto error_ret;
 
 	sbi = malloc(sizeof(struct _shmm_blk_impl));
-	if(sbi == 0) goto error_ret;
+	if(!sbi) goto error_ret;
 
-	sbi->_the_key = ftok(shmm_name, channel);
-	if(sbi->_the_key < 0) goto error_ret;
+	sbi->_file_fd = open(shmm_name, O_CREAT | O_RDONLY);
+	if(sbi->_file_fd < 0) goto error_ret;
+
+	sbi->_the_blk.key = ftok(shmm_name, channel);
+	if(sbi->_the_blk.key < 0) goto error_ret;
 
 	flag |= IPC_CREAT;
 	flag |= IPC_EXCL;
@@ -64,7 +76,7 @@ struct shmm_blk* shmm_new(const char* shmm_name, long channel, long size, long t
 		}
 	}
 
-	sbi->_fd = shmget(sbi->_the_key, size + sizeof(struct _shmm_blk_head), flag);
+	sbi->_fd = shmget(sbi->_the_blk.key, size + sizeof(struct _shmm_blk_head), flag);
 	if(sbi->_fd < 0)
 		goto error_ret;
 
@@ -74,10 +86,12 @@ struct shmm_blk* shmm_new(const char* shmm_name, long channel, long size, long t
 
 	sbh = (struct _shmm_blk_head*)ret_addr;
 	sbh->_shmm_tag = SHMM_TAG;
-	sbh->_shmm_size = size;
+	sbh->_addr_begin = (unsigned long)ret_addr;
+	sbh->_addr_end = (unsigned long)ret_addr + size + sizeof(struct _shmm_blk_head);
+	sbh->_the_key = sbi->_the_blk.key;
 
-	sbi->_the_blk.addr = ret_addr + sizeof(struct _shmm_blk_head);
-	sbi->_the_blk.size = size;
+	sbi->_the_blk.addr_begin = ret_addr + sizeof(struct _shmm_blk_head);
+	sbi->_the_blk.addr_end = (void*)sbh->_addr_end;
 
 	return &sbi->_the_blk;
 error_ret:
@@ -85,42 +99,11 @@ error_ret:
 	{
 		if(ret_addr)
 			shmdt(ret_addr);
+		if(sbi->_file_fd > 0)
+			close(sbi->_file_fd);
 		free(sbi);
 	}
 	return 0;
-}
-
-static long _shmm_get_size(const char* shmm_name, long channel)
-{
-	int flag = 0;
-	int fd;
-	long key;
-	long size;
-	struct _shmm_blk_head* hd;
-
-	if(shmm_name == 0 || strlen(shmm_name) == 0 || channel <= 0)
-		goto error_ret;
-
-	key = ftok(shmm_name, channel);
-	if(key < 0) goto error_ret;
-
-	flag |= SHM_R;
-
-	fd = shmget(key, sizeof(struct _shmm_blk_head), flag);
-	if(fd < 0)
-		goto error_ret;
-
-	hd = (struct _shmm_blk_head*)shmat(fd, 0, SHM_RND);
-	if(hd == (void*)(-1) || hd->_shmm_tag != SHMM_TAG)
-		goto error_ret;
-
-	size = hd->_shmm_size;
-
-	shmdt(hd);
-
-	return size;
-error_ret:
-	return -1;
 }
 
 struct shmm_blk* shmm_open(const char* shmm_name, long channel, void* at_addr)
@@ -133,29 +116,38 @@ struct shmm_blk* shmm_open(const char* shmm_name, long channel, void* at_addr)
 	if(shmm_name == 0 || strlen(shmm_name) == 0 || channel <= 0)
 		goto error_ret;
 
+	if(at_addr)
+		at_addr -= sizeof(struct _shmm_blk_head);
+
+	if(at_addr && ((unsigned long)at_addr & ~(SHM_PAGE_SIZE - 1)) != 0)
+		goto error_ret;
+
 	sbi = malloc(sizeof(struct _shmm_blk_impl));
 	if(sbi == 0) goto error_ret;
 
-	sbi->_the_key = ftok(shmm_name, channel);
-	if(sbi->_the_key < 0) goto error_ret;
+	sbi->_file_fd = open(shmm_name, O_CREAT | O_RDONLY);
+	if(sbi->_file_fd < 0) goto error_ret;
+
+	sbi->_the_blk.key = ftok(shmm_name, channel);
+	if(sbi->_the_blk.key < 0) goto error_ret;
 
 	flag |= SHM_R;
 	flag |= SHM_W;
 
-	sbi->_fd = shmget(sbi->_the_key, 0, flag);
+	sbi->_fd = shmget(sbi->_the_blk.key, 0, flag);
 	if(sbi->_fd < 0)
 		goto error_ret;
 
-	ret_addr = shmat(sbi->_fd, at_addr, SHM_RND);
+	ret_addr = shmat(sbi->_fd, at_addr, 0);
 	if(ret_addr == (void*)(-1))
 		goto error_ret;
 
 	sbh = (struct _shmm_blk_head*)ret_addr;
-	if(sbh->_shmm_tag != SHMM_TAG)
+	if(sbh->_shmm_tag != SHMM_TAG || sbh->_addr_begin != (unsigned long)ret_addr || sbi->_the_blk.key != sbh->_the_key)
 		goto error_ret;
 
-	sbi->_the_blk.addr = ret_addr + sizeof(struct _shmm_blk_head);
-	sbi->_the_blk.size = sbh->_shmm_size;
+	sbi->_the_blk.addr_begin = ret_addr + sizeof(struct _shmm_blk_head);
+	sbi->_the_blk.addr_end = sbi->_the_blk.addr_end;
 
 	return &sbi->_the_blk;
 error_ret:
@@ -163,6 +155,8 @@ error_ret:
 	{
 		if(ret_addr)
 			shmdt(ret_addr);
+		if(sbi->_file_fd > 0)
+			close(sbi->_file_fd);
 
 		free(sbi);
 	}
@@ -173,14 +167,17 @@ long shmm_close(struct shmm_blk** shmb)
 {
 	struct _shmm_blk_head* hd;
 	struct _shmm_blk_impl* sbi = _conv_blk(*shmb);
-	if(sbi->_the_blk.addr == 0 || sbi->_the_blk.size == 0)
+	if(!sbi->_the_blk.addr_begin || !sbi->_the_blk.addr_end)
 		goto error_ret;
 
-	hd = (struct _shmm_blk_head*)(sbi->_the_blk.addr - sizeof(struct _shmm_blk_head));
-	if(hd->_shmm_tag != SHMM_TAG || hd->_shmm_size <= 0)
+	hd = (struct _shmm_blk_head*)(sbi->_the_blk.addr_begin - sizeof(struct _shmm_blk_head));
+	if(hd->_shmm_tag != SHMM_TAG)
 		goto error_ret;
 
 	shmdt(hd);
+
+	if(sbi->_file_fd > 0)
+		close(sbi->_file_fd);
 
 	free(sbi);
 	*shmb = 0;
@@ -193,7 +190,7 @@ error_ret:
 	return -1;
 }
 
-long shmm_del(struct shmm_blk** shmb)
+long shmm_destroy(struct shmm_blk** shmb)
 {
 	long rslt;
 	void* ret_addr;

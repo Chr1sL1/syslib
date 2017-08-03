@@ -272,7 +272,7 @@ long test_mmp(long total_size, long min_block_idx, long max_block_idx, long node
 	struct timeval tv;
 	struct shmm_blk* sbo = 0;
 
-//	struct shmm_blk* sb = shmm_new("/dev/null", 27, total_size, 0);
+//	struct shmm_blk* sb = shmm_create("/dev/null", 27, total_size, 0);
 //	if(!sb)
 //	{
 //		perror(strerror(errno));
@@ -376,7 +376,7 @@ loop_continue:
 	}
 
 	mmp_destroy(mp);
-//	shmm_del(&sb);
+//	shmm_destroy(&sb);
 	printf("test_mmp successed.\n");
 	return 0;
 error_ret:
@@ -384,7 +384,7 @@ error_ret:
 		mmp_check(mp);
 
 //	if(sb)
-//		shmm_del(&sb);
+//		shmm_destroy(&sb);
 
 	printf("test_mmp failed.\n");
 	return -1;
@@ -492,7 +492,7 @@ loop_continue:
 	}
 
 	pgp_destroy(mp);
-//	shmm_del(&sb);
+//	shmm_destroy(&sb);
 	printf("test pgp successed.\n");
 	return 0;
 error_ret:
@@ -500,7 +500,7 @@ error_ret:
 		pgp_check(mp);
 
 //	if(sb)
-//		shmm_del(&sb);
+//		shmm_destroy(&sb);
 
 	printf("test_pgp failed.\n");
 	return -1;
@@ -609,7 +609,7 @@ loop_continue:
 	}
 
 	uma_destroy(mp);
-//	shmm_del(&sb);
+//	shmm_destroy(&sb);
 	printf("test uma successed.\n");
 	return 0;
 error_ret:
@@ -617,7 +617,7 @@ error_ret:
 		uma_check(mp);
 
 //	if(sb)
-//		shmm_del(&sb);
+//		shmm_destroy(&sb);
 
 	printf("test uma failed.\n");
 	return -1;
@@ -935,21 +935,21 @@ long test_shmm(void)
 	{
 		int status = 0;
 		struct ring_buf* rb;
-		struct shmm_blk* sb = shmm_new("/dev/zero", 1, 256, 0);
+		struct shmm_blk* sb = shmm_create("/dev/zero", 1, 256, 0);
 		if(!sb)
 		{
 			printf("main process exit with error: %d\n", errno);
 			exit(-1);
 		}
 
-		rslt = rbuf_new(sb->addr, sb->size);
+		rslt = rbuf_new(sb->addr_begin, sb->addr_end - sb->addr_begin);
 		if(rslt < 0)
 		{
 			printf("new ringbuf failed\n");
 			exit(-1);
 		}
 
-		rb = rbuf_open(sb->addr);
+		rb = rbuf_open(sb->addr_begin);
 		if(!rb)
 		{
 			printf("open ring buf failed\n");
@@ -967,7 +967,7 @@ long test_shmm(void)
 		wait(&status);
 
 		rbuf_del(&rb);
-		shmm_del(&sb);
+		shmm_destroy(&sb);
 
 		printf("main process exit with success.\n");
 		exit(0);
@@ -994,7 +994,7 @@ long test_shmm(void)
 			exit(-1);
 		}
 
-		rb = rbuf_open(sb->addr);
+		rb = rbuf_open(sb->addr_begin);
 		if(!rb)
 		{
 			printf("open ring buf failed\n");

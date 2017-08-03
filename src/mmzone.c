@@ -274,3 +274,18 @@ error_ret:
 	return 0;
 }
 
+long _comp_zone_node(void* key, struct rbnode* n)
+{
+	struct _mm_zone_impl* mzi = _conv_rbnode(n);
+
+	if(key < mzi->_the_zone.addr_begin)
+		return -1;
+	else if(key < mzi->_the_zone.addr_end)
+		return 0;
+
+	return 1;
+}
+
+
+
+
