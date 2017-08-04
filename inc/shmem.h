@@ -1,6 +1,8 @@
 #ifndef __shmem_h__
 #define __shmem_h__
 
+#define MAX_SHMM_NAME_LEN (255)
+
 struct shmm_blk
 {
 	void* addr_begin;

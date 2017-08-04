@@ -47,7 +47,13 @@ struct shmm_blk* shmm_create(const char* shmm_name, long channel, unsigned long 
 	void* ret_addr = 0;
 	struct _shmm_blk_head* sbh;
 	struct _shmm_blk_impl* sbi;
-	if(shmm_name == 0 || strlen(shmm_name) == 0 || channel <= 0 || size <= 0)
+	long name_len;
+
+	if(shmm_name == 0) goto error_ret;
+
+	name_len = strlen(shmm_name);
+
+	if(name_len <= 0 || name_len > MAX_SHMM_NAME_LEN || channel <= 0 || size <= 0)
 		goto error_ret;
 
 	sbi = malloc(sizeof(struct _shmm_blk_impl));
@@ -112,8 +118,13 @@ struct shmm_blk* shmm_open(const char* shmm_name, long channel, void* at_addr)
 	void* ret_addr = 0;
 	struct _shmm_blk_impl* sbi;
 	struct _shmm_blk_head* sbh;
+	long name_len;
 
-	if(shmm_name == 0 || strlen(shmm_name) == 0 || channel <= 0)
+	if(shmm_name == 0) goto error_ret;
+
+	name_len = strlen(shmm_name);
+
+	if(name_len <= 0 || name_len > MAX_SHMM_NAME_LEN || channel <= 0)
 		goto error_ret;
 
 	if(at_addr)
