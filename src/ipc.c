@@ -90,6 +90,8 @@ error_ret:
 
 		free(ipi);
 	}
+
+	return 0;
 }
 
 long ipc_unlink(struct ipc_peer** pr)

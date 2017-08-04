@@ -114,7 +114,7 @@ struct uma* uma_create(void* addr, unsigned long size, unsigned long obj_size)
 	void* cur_pos;
 	unsigned long chunk_size;
 
-	if(!addr || ((unsigned long)addr & 7 != 0)) goto error_ret;
+	if(!addr || ((unsigned long)addr & 7) != 0) goto error_ret;
 	if(size <= sizeof(struct _uma_header) + sizeof(struct _uma_impl))
 		goto error_ret;
 
@@ -170,7 +170,7 @@ struct uma* uma_load(void* addr)
 	struct _uma_impl* umi;
 	struct _uma_header* hd;
 
-	if(!addr || ((unsigned long)addr & 7 != 0)) goto error_ret;
+	if(!addr || ((unsigned long)addr & 7) != 0) goto error_ret;
 
 	hd = (struct _uma_header*)addr;
 	if(hd->_chunk_label != UMA_LABEL)

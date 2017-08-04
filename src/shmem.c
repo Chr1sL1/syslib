@@ -70,6 +70,7 @@ struct shmm_blk* shmm_create(const char* shmm_name, long channel, unsigned long 
 	flag |= SHM_R;
 	flag |= SHM_W;
 
+#ifdef __linux__
 	if(try_huge_page)
 	{
 		if(size > SHMM_MID_PAGE_THRESHOLD)
@@ -81,6 +82,7 @@ struct shmm_blk* shmm_create(const char* shmm_name, long channel, unsigned long 
 				flag |= SHM_HUGE_1GB;
 		}
 	}
+#endif
 
 	sbi->_fd = shmget(sbi->_the_blk.key, size + sizeof(struct _shmm_blk_head), flag);
 	if(sbi->_fd < 0)

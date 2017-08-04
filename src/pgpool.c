@@ -403,7 +403,7 @@ struct pgpool* pgp_create(void* addr, unsigned long size, unsigned long maxpg_co
 	long rslt = 0;
 	struct _pgpool_impl* pgpi;
 
-	if(!addr || ((unsigned long)addr & 0x7 != 0) || size <= PG_SIZE) goto error_ret;
+	if(!addr || ((unsigned long)addr & 0x7) != 0 || size <= PG_SIZE) goto error_ret;
 
 	pgpi = _pgp_init_chunk(addr, size, maxpg_count);
 	if(!pgpi) goto error_ret;
@@ -420,7 +420,7 @@ struct pgpool* pgp_load(void* addr)
 {
 	struct _pgpool_impl* pgpi;
 
-	if(!addr || ((unsigned long)addr & 0x7 != 0)) goto error_ret;
+	if(!addr || ((unsigned long)addr & 0x7) != 0) goto error_ret;
 
 	pgpi = _pgp_load_chunk(addr);
 	if(!pgpi) goto error_ret;
