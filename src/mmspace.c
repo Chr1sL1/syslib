@@ -310,7 +310,7 @@ long mm_save(const char* mm_inf_file)
 
 	if(!__the_mmspace) goto error_ret;
 
-	fd = open(mm_inf_file, O_CREAT | O_WRONLY | O_TRUNC);
+	fd = open(mm_inf_file, O_CREAT | O_WRONLY | O_TRUNC, 0);
 	if(fd < 0) goto error_ret;
 
 	hd._file_tag = MM_INF_FILE_TAG;

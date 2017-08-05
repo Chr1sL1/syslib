@@ -22,13 +22,13 @@ struct _uma_obj_header
 {
 	unsigned int _obj_label;
 	unsigned int _obj_flag;
-};
+}__attribute__((aligned(8)));
 
 struct _uma_node
 {
 	struct dlnode _fln;
 	struct _uma_obj_header* _obj;
-};
+}__attribute__((aligned(8)));
 
 struct _uma_impl
 {
@@ -41,13 +41,8 @@ struct _uma_impl
 	unsigned long _obj_count;
 
 	struct _uma_node* _node_pool;
-};
+}__attribute__((aligned(8)));
 
-//static inline void _set_payload(struct _uma_node* node, void* payload)
-//{
-//	node->_payload_addr = (void*)((unsigned long)payload | node->using);
-//}
-//
 static inline void* _get_payload(struct _uma_obj_header* uoh)
 {
 	return (void*)(uoh + 1);
@@ -122,14 +117,14 @@ struct uma* uma_create(void* addr, unsigned long size, unsigned long obj_size)
 	if(hd->_chunk_label == UMA_LABEL)
 		goto error_ret;
 
-	cur_pos = move_ptr_align8(addr, sizeof(struct _uma_header));
+	cur_pos = move_ptr_align64(addr, sizeof(struct _uma_header));
 
 	hd->_chunk_label = UMA_LABEL;
 	hd->_addr_begin = (unsigned long)addr;
 	hd->_addr_end = (unsigned long)addr + size;
 
 	umi = (struct _uma_impl*)cur_pos;
-	cur_pos = move_ptr_align8(cur_pos, sizeof(struct _uma_impl));
+	cur_pos = move_ptr_align64(cur_pos, sizeof(struct _uma_impl));
 
 	umi->_the_uma.addr_begin = addr;
 	umi->_the_uma.addr_end = addr + size;
@@ -140,7 +135,7 @@ struct uma* uma_create(void* addr, unsigned long size, unsigned long obj_size)
 	umi->_obj_count = (umi->_the_uma.addr_end - cur_pos) / (sizeof(struct _uma_node) + umi->_actual_obj_size);
 
 	umi->_node_pool = (struct _uma_node*)cur_pos;
-	cur_pos = move_ptr_align8(cur_pos, sizeof(struct _uma_node) * umi->_obj_count);
+	cur_pos = move_ptr_align64(cur_pos, sizeof(struct _uma_node) * umi->_obj_count);
 
 	umi->_chunk_addr = cur_pos;
 
@@ -169,6 +164,7 @@ struct uma* uma_load(void* addr)
 {
 	struct _uma_impl* umi;
 	struct _uma_header* hd;
+	void* cur_pos = addr;
 
 	if(!addr || ((unsigned long)addr & 7) != 0) goto error_ret;
 
@@ -179,7 +175,9 @@ struct uma* uma_load(void* addr)
 	if(hd->_addr_begin != (unsigned long)addr || hd->_addr_begin >= hd->_addr_end)
 		goto error_ret;
 
-	umi = (struct _uma_impl*)(addr + sizeof(struct _uma_header));
+	cur_pos = move_ptr_align64(addr, sizeof(struct _uma_header));
+
+	umi = (struct _uma_impl*)(cur_pos);
 
 	return &umi->_the_uma;
 error_ret:

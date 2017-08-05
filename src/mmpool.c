@@ -60,13 +60,13 @@ struct _free_list_node
 
 	struct _block_head* _block;
 	long _idx;
-};
+}__attribute__((aligned(8)));
 
 struct _free_list_head
 {
 	struct dlist _free_list;
 	long _op_count;
-};
+}__attribute__((aligned(8)));
 
 struct _mmpool_cfg
 {
@@ -76,7 +76,7 @@ struct _mmpool_cfg
 	long _free_list_count;
 	long _min_payload_size;
 	long _max_payload_size;
-};
+}__attribute__((aligned(8)));
 
 struct _mmpool_impl
 {
@@ -90,7 +90,7 @@ struct _mmpool_impl
 	struct dlist _free_fln_list;
 	struct _free_list_node* _fln_pool;
 	struct _free_list_head* _flh;
-};
+}__attribute__((aligned(8)));
 
 static inline struct _mmpool_impl* _conv_mmp(struct mmpool* pl)
 {
@@ -596,7 +596,7 @@ static struct _mmpool_impl* _mmp_init_chunk(void* addr, unsigned long size, unsi
 	struct _mmpool_impl* mmpi;
 
 	struct _chunk_head* hd = (struct _chunk_head*)(addr);
-	cur_section = move_ptr_align8(addr, sizeof(struct _chunk_head));
+	cur_section = move_ptr_align64(addr, sizeof(struct _chunk_head));
 
 	if(hd->_chunck_label == CHUNK_LABEL)
 		goto error_ret;
@@ -613,7 +613,7 @@ static struct _mmpool_impl* _mmp_init_chunk(void* addr, unsigned long size, unsi
 		goto error_ret;
 
 	mmpi = (struct _mmpool_impl*)cur_section;
-	cur_section = move_ptr_align8(cur_section, sizeof(struct _mmpool_impl));
+	cur_section = move_ptr_align64(cur_section, sizeof(struct _mmpool_impl));
 
 	mmpi->_pool.addr_begin = addr;
 	mmpi->_pool.addr_end = (void*)align8((unsigned long)addr + size);
@@ -628,12 +628,12 @@ static struct _mmpool_impl* _mmp_init_chunk(void* addr, unsigned long size, unsi
 	mmpi->_cfg._max_payload_size = max_block_size - HEAD_TAIL_SIZE;
 
 	mmpi->_flh = (struct _free_list_head*)(cur_section);
-	cur_section = move_ptr_align8(cur_section, mmpi->_cfg._free_list_count * sizeof(struct _free_list_head));
+	cur_section = move_ptr_align64(cur_section, mmpi->_cfg._free_list_count * sizeof(struct _free_list_head));
 
 	mmpi->_fln_pool = (struct _free_list_node*)(cur_section);
 	mmpi->_fln_count = (mmpi->_pool.addr_end - cur_section) / align8(_block_size(min_block_order) + sizeof(struct _free_list_node));
 
-	cur_section = move_ptr_align8(cur_section, mmpi->_fln_count * sizeof(struct _free_list_node));
+	cur_section = move_ptr_align64(cur_section, mmpi->_fln_count * sizeof(struct _free_list_node));
 
 	lst_new(&mmpi->_free_fln_list);
 
@@ -695,7 +695,7 @@ static struct _mmpool_impl* _mmp_load_chunk(void* addr)
 	if(chd->_chunck_label != CHUNK_LABEL) goto error_ret;
 	if(chd->_addr_begin != (unsigned long)addr) goto error_ret;
 
-	cur_section = move_ptr_align8(addr, sizeof(struct _chunk_head));
+	cur_section = move_ptr_align64(addr, sizeof(struct _chunk_head));
 
 	mmpi = (struct _mmpool_impl*)cur_section;
 
@@ -781,7 +781,6 @@ void* mmp_alloc(struct mmpool* mmp, unsigned long payload_size)
 	}
 	while(bh == 0);
 
-	printf("alloc bh: %lu.\n", (unsigned long)bh);
 
 	if((bh->_flag & BLOCK_BIT_USED) || (bh->_flag & BLOCK_BIT_UNM))
 		goto error_ret;

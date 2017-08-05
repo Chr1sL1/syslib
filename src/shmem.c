@@ -33,7 +33,6 @@ struct _shmm_blk_impl
 {
 	struct shmm_blk _the_blk;
 	int _fd;
-	int _file_fd;
 };
 
 static inline struct _shmm_blk_impl* _conv_blk(struct shmm_blk* blk)
@@ -58,9 +57,6 @@ struct shmm_blk* shmm_create(const char* shmm_name, long channel, unsigned long 
 
 	sbi = malloc(sizeof(struct _shmm_blk_impl));
 	if(!sbi) goto error_ret;
-
-	sbi->_file_fd = open(shmm_name, O_CREAT | O_RDONLY);
-	if(sbi->_file_fd < 0) goto error_ret;
 
 	sbi->_the_blk.key = ftok(shmm_name, channel);
 	if(sbi->_the_blk.key < 0) goto error_ret;
@@ -107,8 +103,6 @@ error_ret:
 	{
 		if(ret_addr)
 			shmdt(ret_addr);
-		if(sbi->_file_fd > 0)
-			close(sbi->_file_fd);
 		free(sbi);
 	}
 	return 0;
@@ -138,8 +132,6 @@ struct shmm_blk* shmm_open(const char* shmm_name, long channel, void* at_addr)
 	sbi = malloc(sizeof(struct _shmm_blk_impl));
 	if(sbi == 0) goto error_ret;
 
-	sbi->_file_fd = open(shmm_name, O_CREAT | O_RDONLY);
-	if(sbi->_file_fd < 0) goto error_ret;
 
 	sbi->_the_blk.key = ftok(shmm_name, channel);
 	if(sbi->_the_blk.key < 0) goto error_ret;
@@ -168,8 +160,6 @@ error_ret:
 	{
 		if(ret_addr)
 			shmdt(ret_addr);
-		if(sbi->_file_fd > 0)
-			close(sbi->_file_fd);
 
 		free(sbi);
 	}
@@ -302,9 +292,6 @@ long shmm_close(struct shmm_blk** shmb)
 		goto error_ret;
 
 	shmdt(hd);
-
-	if(sbi->_file_fd > 0)
-		close(sbi->_file_fd);
 
 	free(sbi);
 	*shmb = 0;

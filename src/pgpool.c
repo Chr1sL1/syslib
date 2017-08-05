@@ -38,19 +38,19 @@ struct _pg_node
 	};
 
 	long _pg_count;
-};
+}__attribute__((aligned(8)));
 
 struct _free_list_head
 {
 	struct dlist _free_list;
 	long _op_count;
-};
+}__attribute__((aligned(8)));
 
 struct _pgp_cfg
 {
 	unsigned long maxpg_count;
 	unsigned long freelist_count;
-};
+}__attribute__((aligned(8)));
 
 struct _pgpool_impl
 {
@@ -65,7 +65,7 @@ struct _pgpool_impl
 
 	struct dlist _free_pgn_list;
 	struct _pg_node* _pgn_pool;
-};
+}__attribute__((aligned(8)));
 
 static inline unsigned long _align_pg(unsigned long addr)
 {
@@ -301,7 +301,7 @@ static struct _pgpool_impl* _pgp_init_chunk(void* addr, unsigned long size, unsi
 	unsigned long chunk_pg_count;
 
 	hd = (struct _chunk_header*)addr;
-	cur_offset = move_ptr_align8(addr, sizeof(struct _chunk_header));
+	cur_offset = move_ptr_align64(addr, sizeof(struct _chunk_header));
 
 	if(hd->_chunck_label == PGP_CHUNK_LABEL)
 		goto error_ret;
@@ -309,7 +309,7 @@ static struct _pgpool_impl* _pgp_init_chunk(void* addr, unsigned long size, unsi
 	hd->_chunck_label = PGP_CHUNK_LABEL;
 
 	pgpi = (struct _pgpool_impl*)cur_offset;
-	cur_offset = move_ptr_align8(cur_offset, sizeof(struct _pgpool_impl));
+	cur_offset = move_ptr_align64(cur_offset, sizeof(struct _pgpool_impl));
 
 	pgpi->_the_pool.addr_begin = addr;
 	pgpi->_the_pool.addr_end = (void*)_align_pg((unsigned long)addr + size) - PG_SIZE;
@@ -334,7 +334,7 @@ static struct _pgpool_impl* _pgp_init_chunk(void* addr, unsigned long size, unsi
 	pgpi->_chunk_pgcount = (pgpi->_the_pool.addr_end - cur_offset) / (PG_SIZE + sizeof(struct _pg_node));
 
 	pgpi->_pgn_pool = (struct _pg_node*)cur_offset;
-	cur_offset = move_ptr_align8(cur_offset, sizeof(struct _pg_node) * pgpi->_chunk_pgcount);
+	cur_offset = move_ptr_align64(cur_offset, sizeof(struct _pg_node) * pgpi->_chunk_pgcount);
 	cur_offset = (void*)_align_pg((unsigned long)cur_offset);
 
 	pgpi->_chunk_addr = cur_offset;
@@ -381,7 +381,7 @@ static struct _pgpool_impl* _pgp_load_chunk(void* addr)
 	struct _pgpool_impl* pgpi;
 
 	hd = (struct _chunk_header*)addr;
-	cur_offset = move_ptr_align8(addr, sizeof(struct _chunk_header));
+	cur_offset = move_ptr_align64(addr, sizeof(struct _chunk_header));
 
 	if(hd->_chunck_label != PGP_CHUNK_LABEL)
 		goto error_ret;

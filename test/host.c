@@ -627,7 +627,7 @@ error_ret:
 long profile_mmpool(void)
 {
 	long rslt = 0;
-	unsigned int size = 100 * 1024 * 1024;
+	unsigned int size = 200 * 1024 * 1024;
 	long rnd = 0;
 	unsigned long r1 = 0, r2 = 0;
 
@@ -638,19 +638,19 @@ long profile_mmpool(void)
 
 	mmp_buf = malloc(size);
 
-	struct mmpool* pool = mmp_create(mmp_buf, size, 6, 10);
+	struct mmpool* pool = mmp_create(mmp_buf, size, 6, 11);
 
 	if(!pool) goto error_ret;
 
 	for(long i = 0; i < count; i++)
 	{
-		rnd = random() % 1024;
+		rnd = 64 + random() % (1024 - 64);
 
-		if(rnd <= 0)
+		if(rnd < 0)
 			continue;
 
 		r1 = rdtsc();
-		void* p = mmp_alloc(pool, rnd);
+		char* p = mmp_alloc(pool, rnd);
 		r2 = rdtsc();
 
 		tmp = r2 - r1;
@@ -658,8 +658,12 @@ long profile_mmpool(void)
 		if(tmp > alloc_max)
 			alloc_max = tmp;
 
+		if(!p)
+		{
+			printf("alloc errrrrrrrrrrrrrrrrror.\n");
+			printf("size: %ld.\n", rnd);
+		}
 
-		if(!p) printf("alloc errrrrrrrrrrrrrrrrror.\n");
 
 		r1 = rdtsc();
 		mmp_free(pool, p);
@@ -671,7 +675,7 @@ long profile_mmpool(void)
 			free_max = tmp;
 	}
 
-	rslt = mmp_check(pool);
+//	rslt = mmp_check(pool);
 
 	printf("[avg] alloc cycle: %lu, free cycle: %lu.\n", alloc_sum / count, free_sum / count);
 	printf("[max] alloc cycle: %lu, free cycle: %lu.\n", alloc_max, free_max);
@@ -1169,10 +1173,10 @@ int main(void)
 //	printf("%lu\n", i);
 //
 //	unsigned long seed = 0;//time(0);
-	unsigned long seed = 0;//time(0);
+	unsigned long seed = 123;//time(0);
 	srandom(seed);
 
-	test_shmm();
+//	test_shmm();
 
 //	dbg_zone(1024 * 1024);
 
@@ -1191,7 +1195,7 @@ int main(void)
 
 //	test_pgp(50 * 1024 * 1024, 100, 64);
 
-//	profile_uma();
+	profile_uma();
 
 //	test_uma(50 * 1024 * 1024, 100, 64);
 
