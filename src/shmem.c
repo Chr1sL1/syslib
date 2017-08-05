@@ -41,7 +41,7 @@ static inline struct _shmm_blk_impl* _conv_blk(struct shmm_blk* blk)
 	return (struct _shmm_blk_impl*)((unsigned long)blk - (unsigned long)&(((struct _shmm_blk_impl*)(0))->_the_blk));
 }
 
-struct shmm_blk* shmm_create(const char* shmm_name, long channel, unsigned long size, long try_huge_page)
+struct shmm_blk* shmm_create(const char* shmm_name, long channel, unsigned long size, int try_huge_page)
 {
 	int flag = 0;
 	void* ret_addr = 0;
@@ -174,6 +174,120 @@ error_ret:
 		free(sbi);
 	}
 	return 0;
+}
+
+struct shmm_blk* shmm_create_key(long key, unsigned long size, int try_huge_page)
+{
+	int flag = 0;
+	void* ret_addr = 0;
+	struct _shmm_blk_head* sbh;
+	struct _shmm_blk_impl* sbi;
+
+	if(key == IPC_PRIVATE || key <= 0 || size <= 0)
+		goto error_ret;
+
+	sbi = malloc(sizeof(struct _shmm_blk_impl));
+	if(!sbi) goto error_ret;
+
+	sbi->_the_blk.key = key;
+
+	flag |= IPC_CREAT;
+	flag |= IPC_EXCL;
+	flag |= SHM_R;
+	flag |= SHM_W;
+
+#ifdef __linux__
+	if(try_huge_page)
+	{
+		if(size > SHMM_MID_PAGE_THRESHOLD)
+		{
+			flag |= SHM_HUGETLB;
+			if(size <= SHMM_HUGE_PAGE_THRESHOLD)
+				flag |= SHM_HUGE_2MB;
+			else
+				flag |= SHM_HUGE_1GB;
+		}
+	}
+#endif
+
+	sbi->_fd = shmget(sbi->_the_blk.key, size + sizeof(struct _shmm_blk_head), flag);
+	if(sbi->_fd < 0)
+		goto error_ret;
+
+	ret_addr = shmat(sbi->_fd, 0, SHM_RND);
+	if(ret_addr == (void*)(-1))
+		goto error_ret;
+
+	sbh = (struct _shmm_blk_head*)ret_addr;
+	sbh->_shmm_tag = SHMM_TAG;
+	sbh->_addr_begin = (unsigned long)ret_addr;
+	sbh->_addr_end = (unsigned long)ret_addr + size + sizeof(struct _shmm_blk_head);
+	sbh->_the_key = sbi->_the_blk.key;
+
+	sbi->_the_blk.addr_begin = ret_addr + sizeof(struct _shmm_blk_head);
+	sbi->_the_blk.addr_end = (void*)sbh->_addr_end;
+
+	return &sbi->_the_blk;
+error_ret:
+	if(sbi)
+	{
+		if(ret_addr)
+			shmdt(ret_addr);
+		free(sbi);
+	}
+	return 0;
+
+}
+
+struct shmm_blk* shmm_open_key(long key, void* at_addr)
+{
+	int flag = 0;
+	void* ret_addr = 0;
+	struct _shmm_blk_impl* sbi;
+	struct _shmm_blk_head* sbh;
+
+	if(key == IPC_PRIVATE || key <= 0)
+		goto error_ret;
+
+	if(at_addr)
+		at_addr -= sizeof(struct _shmm_blk_head);
+
+	if(at_addr && ((unsigned long)at_addr & ~(SHM_PAGE_SIZE - 1)) != 0)
+		goto error_ret;
+
+	sbi = malloc(sizeof(struct _shmm_blk_impl));
+	if(sbi == 0) goto error_ret;
+
+	sbi->_the_blk.key = key;
+
+	flag |= SHM_R;
+	flag |= SHM_W;
+
+	sbi->_fd = shmget(sbi->_the_blk.key, 0, flag);
+	if(sbi->_fd < 0)
+		goto error_ret;
+
+	ret_addr = shmat(sbi->_fd, at_addr, 0);
+	if(ret_addr == (void*)(-1))
+		goto error_ret;
+
+	sbh = (struct _shmm_blk_head*)ret_addr;
+	if(sbh->_shmm_tag != SHMM_TAG || sbh->_addr_begin != (unsigned long)ret_addr || sbi->_the_blk.key != sbh->_the_key)
+		goto error_ret;
+
+	sbi->_the_blk.addr_begin = ret_addr + sizeof(struct _shmm_blk_head);
+	sbi->_the_blk.addr_end = sbi->_the_blk.addr_end;
+
+	return &sbi->_the_blk;
+error_ret:
+	if(sbi)
+	{
+		if(ret_addr)
+			shmdt(ret_addr);
+		free(sbi);
+	}
+	return 0;
+
 }
 
 long shmm_close(struct shmm_blk** shmb)

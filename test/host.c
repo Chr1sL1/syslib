@@ -935,7 +935,7 @@ long test_shmm(void)
 	{
 		int status = 0;
 		struct ring_buf* rb;
-		struct shmm_blk* sb = shmm_create("/dev/zero", 1, 256, 0);
+		struct shmm_blk* sb = shmm_create_key(101, 256, 0);
 		if(!sb)
 		{
 			printf("main process exit with error: %d\n", errno);
@@ -987,7 +987,7 @@ long test_shmm(void)
 		char read_buf[2] = { 0 };
 		struct ring_buf* rb;
 		rslt = 0;
-		struct shmm_blk* sb = shmm_open("/dev/zero", 1, 0);
+		struct shmm_blk* sb = shmm_open_key(101, 0);
 		if(!sb)
 		{
 			printf("child process exit with error: %d\n", errno);
@@ -1172,7 +1172,9 @@ int main(void)
 	unsigned long seed = 0;//time(0);
 	srandom(seed);
 
-	dbg_zone(1024 * 1024);
+	test_shmm();
+
+//	dbg_zone(1024 * 1024);
 
 //	dbg("%lu,%lu\n", is_2power(129), is_2power(64));
 

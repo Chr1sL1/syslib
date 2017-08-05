@@ -26,8 +26,7 @@ struct _mm_chunk_impl
 
 struct _mm_chunk_save_inf
 {
-	char _chunk_name[MAX_SHMM_NAME_LEN];
-	int _channel;
+	long _key;
 	unsigned long _map_addr;
 };
 
@@ -51,8 +50,7 @@ struct _mm_inf_file_header
 
 struct _mm_inf_chunk_dat
 {
-	char _chunk_name[MAX_SHMM_NAME_LEN];
-	int _channel;
+	long _key;
 	unsigned long _map_addr;
 };
 
@@ -62,7 +60,7 @@ struct _mm_inf_chunk_dat
 
 static struct _mm_space_impl* __the_mmspace = 0;
 
-static inline long _mm_link_chunk(struct _mm_chunk_impl* mci, const char* name, int channel, void* at_addr);
+static inline long _mm_link_chunk(struct _mm_chunk_impl* mci, long key, void* at_addr);
 
 static struct _mm_chunk_impl* _conv_chunk(struct mm_chunk* mmc)
 {
@@ -106,7 +104,7 @@ error_ret:
 	return -1;
 }
 
-struct mm_chunk* mm_chunk_create(const char* name, int channel, unsigned long size, int try_huge_page)
+struct mm_chunk* mm_chunk_create(long key, unsigned long size, int try_huge_page)
 {
 	long rslt;
 	struct _mm_chunk_impl* mci;
@@ -116,7 +114,7 @@ struct mm_chunk* mm_chunk_create(const char* name, int channel, unsigned long si
 	mci = malloc(sizeof(struct _mm_chunk_impl));
 	if(!mci) goto error_ret;
 
-	mci->_the_chunk.shm_blk = shmm_create(name, channel, size, try_huge_page);
+	mci->_the_chunk.shm_blk = shmm_create_key(key, size, try_huge_page);
 	if(!mci->_the_chunk.shm_blk)
 		goto error_ret;
 
@@ -132,7 +130,7 @@ struct mm_chunk* mm_chunk_create(const char* name, int channel, unsigned long si
 
 	mci->_the_chunk.remain_size = mci->_the_chunk.shm_blk->addr_end - mci->_the_chunk.shm_blk->addr_begin;
 
-	rslt = _mm_link_chunk(mci, name, channel, mci->_the_chunk.shm_blk->addr_begin);
+	rslt = _mm_link_chunk(mci, key, mci->_the_chunk.shm_blk->addr_begin);
 	if(rslt < 0) goto error_ret;
 
 	return &mci->_the_chunk;
@@ -144,7 +142,7 @@ error_ret:
 	return 0;
 }
 
-struct mm_chunk* mm_chunk_load(const char* name, int channel, void* at_addr)
+struct mm_chunk* mm_chunk_load(long key, void* at_addr)
 {
 	long rslt;
 	void* load_pos;
@@ -156,7 +154,7 @@ struct mm_chunk* mm_chunk_load(const char* name, int channel, void* at_addr)
 	mci = malloc(sizeof(struct _mm_chunk_impl));
 	if(!mci) goto error_ret;
 
-	mci->_the_chunk.shm_blk = shmm_open(name, channel, at_addr);
+	mci->_the_chunk.shm_blk = shmm_open_key(key, at_addr);
 	if(!mci->_the_chunk.shm_blk)
 		goto error_ret;
 
@@ -173,7 +171,7 @@ struct mm_chunk* mm_chunk_load(const char* name, int channel, void* at_addr)
 		load_pos = zone->addr_end;
 	}
 
-	rslt = _mm_link_chunk(mci, name, channel, mci->_the_chunk.shm_blk->addr_begin);
+	rslt = _mm_link_chunk(mci, key, mci->_the_chunk.shm_blk->addr_begin);
 	if(rslt < 0) goto error_ret;
 
 	return &mci->_the_chunk;
@@ -226,7 +224,7 @@ error_ret:
 ///////////////////////////////////////////////////////////////////////////////////////////////
 // mm functions:
 //
-static inline long _mm_link_chunk(struct _mm_chunk_impl* mci, const char* name, int channel, void* at_addr)
+static inline long _mm_link_chunk(struct _mm_chunk_impl* mci, long key, void* at_addr)
 {
 	long rslt;
 
@@ -236,9 +234,8 @@ static inline long _mm_link_chunk(struct _mm_chunk_impl* mci, const char* name, 
 	rslt = rb_insert(&__the_mmspace->_chunk_tree, &mci->_rb_node);
 	if(rslt < 0) goto error_ret;
 
-	__the_mmspace->_chunk_save_inf[__the_mmspace->_chunk_save_count]._channel = channel;
+	__the_mmspace->_chunk_save_inf[__the_mmspace->_chunk_save_count]._key = key;
 	__the_mmspace->_chunk_save_inf[__the_mmspace->_chunk_save_count]._map_addr = (unsigned long)at_addr;
-	strncpy(__the_mmspace->_chunk_save_inf[__the_mmspace->_chunk_save_count]._chunk_name, name, MAX_SHMM_NAME_LEN - 1);
 
 	++__the_mmspace->_chunk_save_count;
 
@@ -294,7 +291,7 @@ long mm_load(const char* mm_inf_file)
 		if(rslt < sizeof(struct _mm_inf_chunk_dat))
 			goto error_ret;
 
-		mmc = mm_chunk_load(dat._chunk_name, dat._channel, (void*)dat._map_addr);
+		mmc = mm_chunk_load(dat._key, (void*)dat._map_addr);
 		if(!mmc) goto error_ret;
 	}
 
@@ -328,8 +325,7 @@ long mm_save(const char* mm_inf_file)
 	{
 		struct _mm_inf_chunk_dat dat;
 		dat._map_addr = __the_mmspace->_chunk_save_inf[i]._map_addr;
-		dat._channel = __the_mmspace->_chunk_save_inf[i]._channel;
-		memcpy(dat._chunk_name, __the_mmspace->_chunk_save_inf[i]._chunk_name, MAX_SHMM_NAME_LEN);
+		dat._key = __the_mmspace->_chunk_save_inf[i]._key;
 
 		rslt = write(fd, &dat, sizeof(struct _mm_inf_chunk_dat));
 		if(rslt < sizeof(struct _mm_inf_chunk_dat))

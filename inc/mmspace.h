@@ -10,8 +10,9 @@ struct mm_chunk
 	unsigned long remain_size;
 };
 
-struct mm_chunk* mm_chunk_create(const char* name, int channel, unsigned long size, int try_huge_page);
-struct mm_chunk* mm_chunk_load(const char* name, int channel, void* at_addr);
+struct mm_chunk* mm_chunk_create(long key, unsigned long size, int try_huge_page);
+struct mm_chunk* mm_chunk_load(long key, void* at_addr);
+
 long mm_chunk_destroy(struct mm_chunk* mmc);
 
 long mm_chunk_add_zone(struct mm_chunk* mmc, long type, unsigned long size, struct mm_zone_config* cfg);

@@ -10,8 +10,11 @@ struct shmm_blk
 	long key;
 };
 
-struct shmm_blk* shmm_create(const char* shmm_name, long channel, unsigned long size, long try_huge_page);
+struct shmm_blk* shmm_create(const char* shmm_name, long channel, unsigned long size, int try_huge_page);
 struct shmm_blk* shmm_open(const char* shmm_name, long channel, void* at_addr);
+
+struct shmm_blk* shmm_create_key(long key, unsigned long size, int try_huge_page);
+struct shmm_blk* shmm_open_key(long key, void* at_addr);
 
 long shmm_close(struct shmm_blk** shmb);
 long shmm_destroy(struct shmm_blk** shmb);
