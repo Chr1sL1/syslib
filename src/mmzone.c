@@ -3,7 +3,7 @@
 #include "rbtree.h"
 #include "mmpool.h"
 #include "pgpool.h"
-#include "uma.h"
+#include "mmkeg.h"
 #include "misc.h"
 
 #define MMZONE_LABEL (0x7a6f6e65)
@@ -33,7 +33,7 @@ struct _mm_zone_impl
 		void* _alloc_shadow;
 		struct mmpool* _alloc_mmpool;
 		struct pgpool* _alloc_pgpool;
-		struct uma* _alloc_uma;
+		struct mmkeg* _alloc_slb;
 	};
 };
 
@@ -55,10 +55,9 @@ static void* _alloc_pgp_create(struct _mm_zone_impl* mzi, struct mm_zone_config*
 			cfg->pgp_cfg.maxpg_count);
 }
 
-static void* _alloc_uma_create(struct _mm_zone_impl* mzi, struct mm_zone_config* cfg)
+static void* _alloc_keg_create(struct _mm_zone_impl* mzi, struct mm_zone_config* cfg)
 {
-	return uma_create(mzi->_chuck_addr, mzi->_the_zone.addr_end - mzi->_chuck_addr,
-			cfg->uma_cfg.obj_size);
+	return keg_create(mzi->_chuck_addr, mzi->_the_zone.addr_end - mzi->_chuck_addr);
 }
 
 static void* _alloc_mmp_load(struct _mm_zone_impl* mzi)
@@ -71,9 +70,9 @@ static void* _alloc_pgp_load(struct _mm_zone_impl* mzi)
 	return pgp_load(mzi->_chuck_addr);
 }
 
-static void* _alloc_uma_load(struct _mm_zone_impl* mzi)
+static void* _alloc_keg_load(struct _mm_zone_impl* mzi)
 {
-	return uma_load(mzi->_chuck_addr);
+	return keg_load(mzi->_chuck_addr);
 }
 
 static void* _alloc_mmp_alloc(struct _mm_zone_impl* mzi, unsigned long size)
@@ -86,9 +85,10 @@ static void* _alloc_pgp_alloc(struct _mm_zone_impl* mzi, unsigned long size)
 	return pgp_alloc(mzi->_alloc_pgpool, size);
 }
 
-static void* _alloc_uma_alloc(struct _mm_zone_impl* mzi, unsigned long size)
+static void* _alloc_keg_alloc(struct _mm_zone_impl* mzi, unsigned long size)
 {
-	return uma_alloc(mzi->_alloc_uma);
+//	return keg_alloc(mzi->_alloc_slb);
+	return 0;
 }
 
 static long _alloc_mmp_free(struct _mm_zone_impl* mzi, void* p)
@@ -101,36 +101,36 @@ static long _alloc_pgp_free(struct _mm_zone_impl* mzi, void* p)
 	return pgp_free(mzi->_alloc_pgpool, p);
 }
 
-static long _alloc_uma_free(struct _mm_zone_impl* mzi, void* p)
+static long _alloc_keg_free(struct _mm_zone_impl* mzi, void* p)
 {
-	return uma_free(mzi->_alloc_uma, p);
+	return keg_free(mzi->_alloc_slb, p);
 }
 static _alloc_create_func __alloc_create_func[] =
 {
 	_alloc_mmp_create,
 	_alloc_pgp_create,
-	_alloc_uma_create,
+	_alloc_keg_create,
 };
 
 static _alloc_load_func __alloc_load_func[] =
 {
 	_alloc_mmp_load,
 	_alloc_pgp_load,
-	_alloc_uma_load,
+	_alloc_keg_load,
 };
 
 static _alloc_alloc_func __alloc_alloc_func[] =
 {
 	_alloc_mmp_alloc,
 	_alloc_pgp_alloc,
-	_alloc_uma_alloc,
+	_alloc_keg_alloc,
 };
 
 static _alloc_free_func __alloc_free_func[] =
 {
 	_alloc_mmp_free,
 	_alloc_pgp_free,
-	_alloc_uma_free,
+	_alloc_keg_free,
 };
 
 static inline struct _mm_zone_impl* _conv_impl(struct mm_zone* mmz)
@@ -161,7 +161,7 @@ struct mm_zone* mmz_create(long type, void* addr_begin, void* addr_end, struct m
 	if(type <= MMZ_INVALID || type >= MMZ_COUNT) goto error_ret;
 
 	hd = (struct _mm_zone_header*)cur_pos;
-	cur_pos = move_ptr_align8(cur_pos, sizeof(struct _mm_zone_header));
+	cur_pos = move_ptr_align64(cur_pos, sizeof(struct _mm_zone_header));
 
 	hd->_zone_label = MMZONE_LABEL;
 	hd->_zone_type = type;
@@ -178,6 +178,7 @@ struct mm_zone* mmz_create(long type, void* addr_begin, void* addr_end, struct m
 
 	lst_clr(&mzi->_list_node);
 	rb_fillnew(&mzi->_rb_node);
+	mzi->_rb_node.key = addr_begin;
 
 	mzi->_alloc_shadow = (*__alloc_create_func[mzi->_the_zone.type])(mzi, cfg);
 	if(!mzi->_alloc_shadow) goto error_ret;
@@ -197,7 +198,7 @@ struct mm_zone* mmz_load(void* addr)
 	if(((unsigned long)addr & 0x7) != 0) goto error_ret;
 
 	hd = (struct _mm_zone_header*)cur_pos;
-	cur_pos = move_ptr_align8(cur_pos, sizeof(struct _mm_zone_header));
+	cur_pos = move_ptr_align64(cur_pos, sizeof(struct _mm_zone_header));
 
 	if(hd->_zone_label != MMZONE_LABEL) goto error_ret;
 	if(hd->_zone_type <= MMZ_INVALID || hd->_zone_type >= MMZ_COUNT) goto error_ret;

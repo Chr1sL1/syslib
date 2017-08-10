@@ -1,7 +1,7 @@
 #ifndef __mm_zone_h__
 #define __mm_zone_h__
 
-enum
+enum MMZ_BLOCK_TYPE
 {
 	MMZ_INVALID = -1,
 
@@ -38,7 +38,7 @@ struct mm_zone_config
 		struct
 		{
 			unsigned long obj_size;
-		} uma_cfg;
+		} slb_cfg;
 	};
 };
 

@@ -1,6 +1,8 @@
 #ifndef __mmspace_h__
 #define __mmspace_h__
 
+#include "dlist.h"
+
 struct shmm_blk;
 struct mm_zone_config;
 
@@ -25,6 +27,7 @@ long mm_uninitialize(void);
 
 void* mm_alloc(unsigned long size, int alloc_flag);
 long mm_free(void* p);
+
 
 #endif
 

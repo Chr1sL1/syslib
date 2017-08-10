@@ -26,13 +26,12 @@ struct _block_tail
 	unsigned int _block_size;
 };
 
-struct _chunk_head
-{
-	unsigned long _chunck_label;
-	unsigned long _addr_begin;
-	unsigned long _addr_end;
-};
-
+//struct _chunk_head
+//{
+//	unsigned long _chunck_label;
+//	unsigned long _addr_begin;
+//	unsigned long _addr_end;
+//};
 
 #pragma pack()
 
@@ -80,6 +79,7 @@ struct _mmpool_cfg
 
 struct _mmpool_impl
 {
+	unsigned long _chunck_label;
 	struct mmpool _pool;
 	struct _mmpool_cfg _cfg;
 
@@ -587,21 +587,13 @@ static struct _mmpool_impl* _mmp_init_chunk(void* addr, unsigned long size, unsi
 	void* chk1;
 	void* chk2 = 0;
 	void* end;
-	void* cur_section;
+	void* cur_section = addr;
 
 	long blk_size;
 	long rslt = -1;
 	unsigned long min_block_size, max_block_size;
 
 	struct _mmpool_impl* mmpi;
-
-	struct _chunk_head* hd = (struct _chunk_head*)(addr);
-	cur_section = move_ptr_align64(addr, sizeof(struct _chunk_head));
-
-	if(hd->_chunck_label == CHUNK_LABEL)
-		goto error_ret;
-
-	hd->_chunck_label = CHUNK_LABEL;
 
 	min_block_size = 1 << min_block_order;
 	max_block_size = 1 << max_block_order;
@@ -613,13 +605,17 @@ static struct _mmpool_impl* _mmp_init_chunk(void* addr, unsigned long size, unsi
 		goto error_ret;
 
 	mmpi = (struct _mmpool_impl*)cur_section;
+	if(mmpi->_chunck_label == CHUNK_LABEL)
+		goto error_ret;
+
 	cur_section = move_ptr_align64(cur_section, sizeof(struct _mmpool_impl));
 
+	mmpi->_chunck_label = CHUNK_LABEL;
 	mmpi->_pool.addr_begin = addr;
 	mmpi->_pool.addr_end = (void*)align8((unsigned long)addr + size);
 
-	hd->_addr_begin = (unsigned long)mmpi->_pool.addr_begin;
-	hd->_addr_end = (unsigned long)mmpi->_pool.addr_end;
+//	hd->_addr_begin = (unsigned long)mmpi->_pool.addr_begin;
+//	hd->_addr_end = (unsigned long)mmpi->_pool.addr_end;
 
 	mmpi->_cfg._min_block_order = min_block_order;
 	mmpi->_cfg._max_block_order = max_block_order;
@@ -691,16 +687,11 @@ static struct _mmpool_impl* _mmp_load_chunk(void* addr)
 	struct _block_head* bhd;
 	struct _mmpool_impl* mmpi;
 
-	struct _chunk_head* chd = (struct _chunk_head*)(addr);
-	if(chd->_chunck_label != CHUNK_LABEL) goto error_ret;
-	if(chd->_addr_begin != (unsigned long)addr) goto error_ret;
+	mmpi = (struct _mmpool_impl*)(addr);
+	if(mmpi->_chunck_label != CHUNK_LABEL) goto error_ret;
+	if(mmpi->_pool.addr_begin != addr || mmpi->_pool.addr_end <= addr) goto error_ret;
 
-	cur_section = move_ptr_align64(addr, sizeof(struct _chunk_head));
-
-	mmpi = (struct _mmpool_impl*)cur_section;
-
-	if(chd->_addr_begin != (unsigned long)(mmpi->_pool.addr_begin) || chd->_addr_end!= (unsigned long)(mmpi->_pool.addr_end))
-		goto error_ret;
+	cur_section = move_ptr_align64(addr, sizeof(struct _mmpool_impl));
 
 	return mmpi;
 error_ret:
@@ -715,7 +706,7 @@ struct mmpool* mmp_create(void* addr, unsigned long size, unsigned int min_block
 	if(!addr) goto error_ret;
 
 	// chunk must be 8-byte aligned.
-	if((((unsigned long)addr) & 0x7) != 0) goto error_ret;
+	if((((unsigned long)addr) & 63) != 0) goto error_ret;
 	if(size < _block_size(min_block_order)) goto error_ret;
 	if(size > 0xFFFFFFFF) goto error_ret;
 
@@ -734,7 +725,7 @@ struct mmpool* mmp_load(void* addr)
 {
 	struct _mmpool_impl* mmpi;
 
-	if((((unsigned long)addr) & 0x7) != 0) goto error_ret;
+	if((((unsigned long)addr) & 63) != 0) goto error_ret;
 
 	mmpi = _mmp_load_chunk(addr);
 
@@ -748,14 +739,13 @@ error_ret:
 void mmp_destroy(struct mmpool* mmp)
 {
 	struct _mmpool_impl* mmpi = _conv_mmp(mmp);
-	struct _chunk_head* hd = (struct _chunk_head*)(mmpi->_pool.addr_begin);
 
-	if(hd->_chunck_label != CHUNK_LABEL)
+	if(mmpi->_chunck_label != CHUNK_LABEL)
 		goto error_ret;
 
-	hd->_chunck_label = 0;
-	hd->_addr_begin = 0;
-	hd->_addr_end = 0;
+	mmpi->_chunck_label = 0;
+	mmpi->_pool.addr_begin = 0;
+	mmpi->_pool.addr_end = 0;
 
 	return;
 error_ret:
