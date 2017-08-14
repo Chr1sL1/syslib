@@ -16,7 +16,6 @@
 #include "pgpool.h"
 #include "mmkeg.h"
 #include "ringbuf.h"
-#include "mmzone.h"
 #include "ipc.h"
 #include <signal.h>
 #include <unistd.h>
@@ -1137,33 +1136,6 @@ void test_ipc(void)
 		exit(rslt);
 	}
 }
-
-void dbg_zone(unsigned long size)
-{
-	void* p;
-	long rslt;
-	struct mm_zone* mmz;
-	struct mm_zone_config cfg;
-	zone_buf = malloc(size);
-
-	cfg.slb_cfg.obj_size = 198;
-
-	mmz = mmz_create(MMZ_FIXED_BLOCK, zone_buf, zone_buf + size, &cfg);
-	if(!mmz) goto error_ret;
-
-	p = mmz_alloc(mmz, 0);
-	if(!p) goto error_ret;
-
-	rslt = mmz_free(mmz, p);
-	if(rslt < 0) goto error_ret;
-
-	mmz_destroy(mmz);
-
-	return;
-error_ret:
-	return;
-}
-
 
 #define dbg(format, ...) printf(format, __VA_ARGS__)
 

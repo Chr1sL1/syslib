@@ -1,292 +1,120 @@
 #include "mmzone.h"
 #include "dlist.h"
-#include "rbtree.h"
-#include "mmpool.h"
-#include "pgpool.h"
-#include "mmkeg.h"
-#include "misc.h"
+#include "mmspace.h"
 
-#define MMZONE_LABEL (0x7a6f6e65)
+#include <stdlib.h>
 
-#pragma pack(1)
-
-struct _mm_zone_header
+struct _free_list_node
 {
-	unsigned int _zone_label;
-	int _zone_type;
-	unsigned long _addr_begin;
-	unsigned long _addr_end;
+	struct dlnode _fln;
+	void* p;
 };
 
-#pragma pack()
-
-struct _mm_zone_impl
+struct _mmzone_impl
 {
-	struct mm_zone _the_zone;
-	void* _chuck_addr;
+	struct mmzone _the_zone;
+	struct dlist _free_list;
+};
 
-	struct dlnode _list_node;
-	struct rbnode _rb_node;
+static inline struct _mmzone_impl* _conv_impl(struct mmzone* mmz)
+{
+	return (struct _mmzone_impl*)((unsigned long)mmz - (unsigned long)(&((struct _mmzone_impl*)(0))->_the_zone));
+}
 
-	union
+static inline struct _free_list_node* _conv_fln(struct dlnode* dln)
+{
+	return (struct _free_list_node*)((unsigned long)dln- (unsigned long)(&((struct _free_list_node*)(0))->_fln));
+}
+
+struct mmzone* mmz_create(unsigned long obj_size)
+{
+	struct _mmzone_impl* mzi;
+	if(obj_size == 0) goto error_ret;
+
+	mzi = malloc(sizeof(struct _mmzone_impl));
+	if(!mzi) goto error_ret;
+
+	mzi->_the_zone.obj_size = obj_size;
+	mzi->_the_zone.current_free_count = 0;
+
+	lst_new(&mzi->_free_list);
+
+	return &mzi->_the_zone;
+error_ret:
+	return 0;
+}
+
+long mmz_destroy(struct mmzone* mmz)
+{
+	struct dlnode* dln;
+	struct _mmzone_impl* mzi = _conv_impl(mmz);
+	if(!mzi) goto error_ret;
+
+	//return all freenode and data to mmspace.
+	//
+
+	dln = &mzi->_free_list.head;
+	while(dln != &mzi->_free_list.tail)
 	{
-		void* _alloc_shadow;
-		struct mmpool* _alloc_mmpool;
-		struct pgpool* _alloc_pgpool;
-		struct mmkeg* _alloc_slb;
-	};
-};
+		struct _free_list_node* fln = _conv_fln(dln);
+		mm_free(fln->p);
+		mm_free(fln);
 
-typedef void* (*_alloc_create_func)(struct _mm_zone_impl*, struct mm_zone_config*);
-typedef void* (*_alloc_load_func)(struct _mm_zone_impl*);
+		dln = dln->next;
+	}
 
-typedef void* (*_alloc_alloc_func)(struct _mm_zone_impl*, unsigned long);
-typedef long (*_alloc_free_func)(struct _mm_zone_impl*, void*);
+	//
 
-static void* _alloc_mmp_create(struct _mm_zone_impl* mzi, struct mm_zone_config* cfg)
-{
-	return mmp_create(mzi->_chuck_addr, mzi->_the_zone.addr_end - mzi->_chuck_addr,
-			cfg->mmp_cfg.min_block_order, cfg->mmp_cfg.max_block_order);
-}
+	free(mzi);
 
-static void* _alloc_pgp_create(struct _mm_zone_impl* mzi, struct mm_zone_config* cfg)
-{
-	return pgp_create(mzi->_chuck_addr, mzi->_the_zone.addr_end - mzi->_chuck_addr,
-			cfg->pgp_cfg.maxpg_count);
-}
-
-static void* _alloc_keg_create(struct _mm_zone_impl* mzi, struct mm_zone_config* cfg)
-{
-	return keg_create(mzi->_chuck_addr, mzi->_the_zone.addr_end - mzi->_chuck_addr);
-}
-
-static void* _alloc_mmp_load(struct _mm_zone_impl* mzi)
-{
-	return mmp_load(mzi->_chuck_addr);
-}
-
-static void* _alloc_pgp_load(struct _mm_zone_impl* mzi)
-{
-	return pgp_load(mzi->_chuck_addr);
-}
-
-static void* _alloc_keg_load(struct _mm_zone_impl* mzi)
-{
-	return keg_load(mzi->_chuck_addr);
-}
-
-static void* _alloc_mmp_alloc(struct _mm_zone_impl* mzi, unsigned long size)
-{
-	return mmp_alloc(mzi->_alloc_mmpool, size);
-}
-
-static void* _alloc_pgp_alloc(struct _mm_zone_impl* mzi, unsigned long size)
-{
-	return pgp_alloc(mzi->_alloc_pgpool, size);
-}
-
-static void* _alloc_keg_alloc(struct _mm_zone_impl* mzi, unsigned long size)
-{
-//	return keg_alloc(mzi->_alloc_slb);
 	return 0;
-}
-
-static long _alloc_mmp_free(struct _mm_zone_impl* mzi, void* p)
-{
-	return mmp_free(mzi->_alloc_mmpool, p);
-}
-
-static long _alloc_pgp_free(struct _mm_zone_impl* mzi, void* p)
-{
-	return pgp_free(mzi->_alloc_pgpool, p);
-}
-
-static long _alloc_keg_free(struct _mm_zone_impl* mzi, void* p)
-{
-	return keg_free(mzi->_alloc_slb, p);
-}
-static _alloc_create_func __alloc_create_func[] =
-{
-	_alloc_mmp_create,
-	_alloc_pgp_create,
-	_alloc_keg_create,
-};
-
-static _alloc_load_func __alloc_load_func[] =
-{
-	_alloc_mmp_load,
-	_alloc_pgp_load,
-	_alloc_keg_load,
-};
-
-static _alloc_alloc_func __alloc_alloc_func[] =
-{
-	_alloc_mmp_alloc,
-	_alloc_pgp_alloc,
-	_alloc_keg_alloc,
-};
-
-static _alloc_free_func __alloc_free_func[] =
-{
-	_alloc_mmp_free,
-	_alloc_pgp_free,
-	_alloc_keg_free,
-};
-
-static inline struct _mm_zone_impl* _conv_impl(struct mm_zone* mmz)
-{
-	return (struct _mm_zone_impl*)((unsigned long)mmz - (unsigned long)(&(((struct _mm_zone_impl*)0)->_the_zone)));
-}
-
-static inline struct _mm_zone_impl* _conv_lstnode(struct dlnode* dln)
-{
-	return (struct _mm_zone_impl*)((unsigned long)dln - (unsigned long)(&(((struct _mm_zone_impl*)0)->_list_node)));
-}
-
-static inline struct _mm_zone_impl* _conv_rbnode(struct rbnode* rbn)
-{
-	return (struct _mm_zone_impl*)((unsigned long)rbn - (unsigned long)(&(((struct _mm_zone_impl*)0)->_rb_node)));
-}
-
-struct mm_zone* mmz_create(long type, void* addr_begin, void* addr_end, struct mm_zone_config* cfg)
-{
-	struct _mm_zone_header* hd;
-	struct _mm_zone_impl* mzi;
-	void* cur_pos = addr_begin;
-
-	if(!addr_begin || !addr_end) goto error_ret;
-	if(addr_begin >= addr_end) goto error_ret;
-	if(((unsigned long)addr_begin & 0x7) != 0 || ((unsigned long)addr_end & 0x7) != 0) goto error_ret;
-	if(addr_end - addr_begin <= sizeof(struct _mm_zone_header) + sizeof(struct _mm_zone_impl)) goto error_ret;
-	if(type <= MMZ_INVALID || type >= MMZ_COUNT) goto error_ret;
-
-	hd = (struct _mm_zone_header*)cur_pos;
-	cur_pos = move_ptr_align64(cur_pos, sizeof(struct _mm_zone_header));
-
-	hd->_zone_label = MMZONE_LABEL;
-	hd->_zone_type = type;
-	hd->_addr_begin = (unsigned long)addr_begin;
-	hd->_addr_end = (unsigned long)addr_end;
-
-	mzi = (struct _mm_zone_impl*)cur_pos;
-	cur_pos = move_ptr_align8(cur_pos, sizeof(struct _mm_zone_impl));
-
-	mzi->_chuck_addr = cur_pos;
-	mzi->_the_zone.type = type;
-	mzi->_the_zone.addr_begin = addr_begin;
-	mzi->_the_zone.addr_end = addr_end;
-
-	lst_clr(&mzi->_list_node);
-	rb_fillnew(&mzi->_rb_node);
-	mzi->_rb_node.key = addr_begin;
-
-	mzi->_alloc_shadow = (*__alloc_create_func[mzi->_the_zone.type])(mzi, cfg);
-	if(!mzi->_alloc_shadow) goto error_ret;
-
-	return &mzi->_the_zone;
-error_ret:
-	return 0;
-}
-
-struct mm_zone* mmz_load(void* addr)
-{
-	struct _mm_zone_header* hd;
-	struct _mm_zone_impl* mzi;
-	void* cur_pos = addr;
-
-	if(!addr) goto error_ret;
-	if(((unsigned long)addr & 0x7) != 0) goto error_ret;
-
-	hd = (struct _mm_zone_header*)cur_pos;
-	cur_pos = move_ptr_align64(cur_pos, sizeof(struct _mm_zone_header));
-
-	if(hd->_zone_label != MMZONE_LABEL) goto error_ret;
-	if(hd->_zone_type <= MMZ_INVALID || hd->_zone_type >= MMZ_COUNT) goto error_ret;
-	if(hd->_addr_begin != (unsigned long)addr) goto error_ret;
-
-	mzi = (struct _mm_zone_impl*)cur_pos;
-	if(mzi->_the_zone.addr_begin != addr || (unsigned long)mzi->_the_zone.addr_end != hd->_addr_end)
-		goto error_ret;
-
-	if(mzi->_the_zone.type != hd->_zone_type)
-		goto error_ret;
-
-	mzi->_alloc_shadow = (*__alloc_load_func[mzi->_the_zone.type])(mzi);
-	if(!mzi->_alloc_shadow) goto error_ret;
-
-	return &mzi->_the_zone;
-error_ret:
-	return 0;
-}
-
-void mmz_destroy(struct mm_zone* mmz)
-{
-	struct _mm_zone_impl* mzi = _conv_impl(mmz);
-	if(!mzi) goto error_ret;
-
-error_ret:
-	return;
-}
-
-void* mmz_alloc(struct mm_zone* mmz, unsigned long size)
-{
-	struct _mm_zone_impl* mzi = _conv_impl(mmz);
-	if(!mzi) goto error_ret;
-
-	if(mzi->_the_zone.type <= MMZ_INVALID || mzi->_the_zone.type >= MMZ_COUNT)
-		goto error_ret;
-
-	return (*__alloc_alloc_func[mzi->_the_zone.type])(mzi, size);
-error_ret:
-	return 0;
-}
-
-long mmz_free(struct mm_zone* mmz, void* p)
-{
-	struct _mm_zone_impl* mzi = _conv_impl(mmz);
-	if(!mzi) goto error_ret;
-
-	if(mzi->_the_zone.type <= MMZ_INVALID || mzi->_the_zone.type >= MMZ_COUNT)
-		goto error_ret;
-
-	return (*__alloc_free_func[mzi->_the_zone.type])(mzi, p);
 error_ret:
 	return -1;
 }
 
-
-inline struct dlnode* mmz_lstnode(struct mm_zone* mmz)
+void* mmz_alloc(struct mmzone* mmz)
 {
-	struct _mm_zone_impl* mzi = _conv_impl(mmz);
+	void* p;
+	struct dlnode* dln;
+	struct _free_list_node* fln;
+	struct _mmzone_impl* mzi = _conv_impl(mmz);
 	if(!mzi) goto error_ret;
 
-	return &mzi->_list_node;
+	if(!lst_empty(&mzi->_free_list))
+	{
+		dln = lst_pop_front(&mzi->_free_list);
+		fln = _conv_fln(dln);
+		p = fln->p;
+		mm_free(fln);
+
+		--mzi->_the_zone.current_free_count;
+	}
+	else
+		p = mm_alloc(mzi->_the_zone.obj_size);
+
+	return p;
 error_ret:
 	return 0;
 }
 
-inline struct rbnode* mmz_rbnode(struct mm_zone* mmz)
+long mmz_free(struct mmzone* mmz, void* p)
 {
-	struct _mm_zone_impl* mzi = _conv_impl(mmz);
+	long rslt;
+	struct _free_list_node* fln;
+	struct _mmzone_impl* mzi = _conv_impl(mmz);
 	if(!mzi) goto error_ret;
 
-	return &mzi->_rb_node;
-error_ret:
+	fln = mm_alloc(sizeof(struct _free_list_node));
+	if(!fln) goto error_ret;
+
+	fln->p = p;
+	rslt = lst_push_front(&mzi->_free_list, &fln->_fln);
+	if(!rslt) goto error_ret;
+
+	++mzi->_the_zone.current_free_count;
+
 	return 0;
+error_ret:
+	return -1;
 }
-
-long _comp_zone_node(void* key, struct rbnode* n)
-{
-	struct _mm_zone_impl* mzi = _conv_rbnode(n);
-
-	if(key < mzi->_the_zone.addr_begin)
-		return -1;
-	else if(key < mzi->_the_zone.addr_end)
-		return 0;
-
-	return 1;
-}
-
-
-
 
