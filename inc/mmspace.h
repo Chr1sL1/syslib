@@ -3,6 +3,28 @@
 
 #include "dlist.h"
 
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+// mmzone: object cache.
+
+struct mmzone
+{
+	unsigned long obj_size;
+	unsigned long current_free_count;
+};
+
+struct mmzone* mm_zcreate(unsigned long obj_size);
+long mmz_zdestroy(struct mmzone* mmz);
+
+void* mm_zalloc(struct mmzone* mmz);
+long mm_zfree(struct mmzone* mmz, void* p);
+
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+// mmspace: a huge block of shared memory in which the whole process's data lays
+
 struct mm_config
 {
 	unsigned long total_size;
@@ -24,7 +46,6 @@ long mm_uninitialize(void);
 
 void* mm_alloc(unsigned long size);
 long mm_free(void* p);
-
 
 #endif
 
