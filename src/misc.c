@@ -119,6 +119,21 @@ inline unsigned long round_down(unsigned long val, unsigned long boundary)
 	return (val & ~(boundary - 1));
 }
 
+
+inline unsigned long bsf(unsigned long val)
+{
+	unsigned long ret;
+	asm("bsfq %1, %0":"=r"(ret):"r"(val));
+	return ret;
+}
+
+inline unsigned long bsr(unsigned long val)
+{
+	unsigned long ret;
+	asm("bsrq %1, %0":"=r"(ret):"r"(val));
+	return ret;
+}
+
 inline void* move_ptr_align8(void* ptr, unsigned long offset)
 {
 	return (void*)(((unsigned long)(ptr + offset) + 7) & (~7));

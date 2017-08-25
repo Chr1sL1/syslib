@@ -12,6 +12,7 @@
 
 #define MM_LABEL (0x6666666666666666UL)
 #define SLAB_LABEL (0x2222222222222222UL)
+#define CACHE_OBJ_COUNT (32)
 
 struct _mm_section_impl
 {
@@ -48,6 +49,7 @@ struct _mm_space_impl
 	struct _mm_area_impl _area_list[MM_AREA_COUNT];
 
 	struct rbtree _all_section_tree;
+	struct dlist _zone_list;
 	struct _mm_shmm_save* _shmm_save_list;
 	void* _usr_globl;
 
@@ -59,6 +61,8 @@ struct _mmzone_impl
 	struct dlist _full_slab_list;
 	struct dlist _empty_slab_list;
 	struct dlist _partial_slab_list;
+
+	struct dlnode _list_node;
 };
 
 static struct _mm_space_impl* __the_mmspace = 0;
@@ -85,29 +89,175 @@ struct _mm_cache
 	struct _mmzone_impl* _zone;
 	struct dlnode _list_node;
 
-	unsigned int _free_idx;
-	unsigned int _obj_count;
+	int _free_count;
+	int _obj_count;
+	unsigned long _alloc_bits;
 
 	void* _obj_ptr;
-};
 
-static struct _mm_cache* _cache_of_obj(void* obj)
+}__attribute__((aligned(8)));
+
+
+static inline struct _mmzone_impl* _conv_zone_impl(struct mmzone* mmz)
 {
-	unsigned long page_size = __the_mmspace->_cfg.mm_cfg[MM_AREA_ZONE].page_size;
-
-	struct _mm_cache* s = (struct _mm_cache*)round_down((unsigned long)obj, page_size);
-
-	while(s != 0 && s->_slab_label != SLAB_LABEL)
-		s = (struct _mm_cache*)((void*)s - page_size);
-
-	return s;
+	return (struct _mmzone_impl*)((unsigned long)mmz - (unsigned long)&((struct _mmzone_impl*)(0))->_the_zone);
 }
+
+static inline struct _mmzone_impl* _conv_zone_lst_node(struct dlnode* dln)
+{
+	return (struct _mmzone_impl*)((unsigned long)dln- (unsigned long)&((struct _mmzone_impl*)(0))->_list_node);
+}
+
+static inline struct _mm_cache* _conv_cache(struct dlnode* dln)
+{
+	return (struct _mm_cache*)((unsigned long)dln- (unsigned long)&((struct _mm_cache*)(0))->_list_node);
+}
+
+static inline struct _mm_cache* _cache_of_obj(void* obj)
+{
+	struct _mm_cache* mmc = (struct _mm_cache*)round_down((unsigned long)obj, __the_mmspace->_cfg.mm_cfg[MM_AREA_ZONE].page_size);
+	if(mmc->_slab_label != SLAB_LABEL) goto error_ret;
+
+	return mmc;
+error_ret:
+	return 0;
+}
+
+static inline long _mm_zcache_full(struct _mm_cache* mc)
+{
+	return mc->_free_count <= 0;
+}
+
+static inline long _mm_zcache_empty(struct _mm_cache* mc)
+{
+	return mc->_free_count >= mc->_obj_count;
+}
+
+static inline void* _mm_zalloc_pg(void)
+{
+	return mm_area_alloc(__the_mmspace->_cfg.mm_cfg[MM_AREA_ZONE].page_size, MM_AREA_ZONE);
+}
+
+static inline int _mmc_next_free_obj(struct _mm_cache* mc)
+{
+	int idx = (int)bsf(~(mc->_alloc_bits));
+
+	if(idx >= mc->_obj_count) goto error_ret;
+
+	return idx;
+error_ret:
+	return -1;
+}
+
+static inline void* _mm_zfetch_obj(struct _mm_cache* mc)
+{
+	void* p;
+	int idx = _mmc_next_free_obj(mc);
+
+	if(idx < 0) goto error_ret;
+
+	p = mc->_obj_ptr + idx * mc->_zone->_the_zone.obj_size;
+
+	mc->_alloc_bits |= (1UL << idx);
+	--mc->_free_count;
+
+	return p;
+error_ret:
+	return 0;
+}
+
+static inline long _mm_zreturn_obj(struct _mm_cache* mc, void* p)
+{
+	int idx = (p - mc->_obj_ptr) / mc->_zone->_the_zone.obj_size;
+	if(idx < 0 || idx >= mc->_obj_count) goto error_ret;
+
+	++mc->_free_count;
+	mc->_alloc_bits &= ~(1UL << idx);
+
+	return 0;
+error_ret:
+	return -1;
+}
+
+
+static inline long _mm_zmove_cache(struct _mm_cache* mc, struct dlist* from_list, struct dlist* to_list)
+{
+	long rslt;
+
+	if(from_list)
+	{
+		rslt = lst_remove(from_list, &mc->_list_node);
+		if(rslt < 0) goto error_ret;
+	}
+
+	return lst_push_front(to_list, &mc->_list_node);
+error_ret:
+	return -1;
+}
+
+static inline struct _mm_cache* _mm_zfirst_cache_from_list(struct dlist* from_list)
+{
+	struct dlnode* dln = from_list->head.next;
+	if(dln == &from_list->tail) goto error_ret;
+
+	return  _conv_cache(dln);
+error_ret:
+	return 0;
+}
+
+static struct _mm_cache* _mm_zcache_new(struct _mmzone_impl* mzi)
+{
+	unsigned int pg_size = __the_mmspace->_cfg.mm_cfg[MM_AREA_ZONE].page_size; 
+
+	struct _mm_cache* mc = (struct _mm_cache*)_mm_zalloc_pg();
+	if(!mc) goto error_ret;
+
+	mc->_slab_label = SLAB_LABEL;
+	mc->_zone = mzi;
+	lst_clr(&mc->_list_node);
+
+	mc->_obj_count = (pg_size - sizeof(struct _mm_cache)) / mzi->_the_zone.obj_size;
+	mc->_obj_ptr = (void*)mc + pg_size - mc->_obj_count * mzi->_the_zone.obj_size;
+
+	mc->_alloc_bits = 0;
+	mc->_free_count = mc->_obj_count;
+
+	return mc;
+error_ret:
+	if(mc)
+		mm_free(mc);
+	return 0;
+}
+
 
 struct mmzone* mm_zcreate(unsigned int obj_size)
 {
+	long rslt;
+	struct _mmzone_impl* mzi;
 	if(!__the_mmspace) goto error_ret;
 
+	obj_size = round_up(obj_size, 8);
+
+	if(obj_size * CACHE_OBJ_COUNT + sizeof(struct _mm_cache) > __the_mmspace->_cfg.mm_cfg[MM_AREA_ZONE].page_size)
+		goto error_ret;
+
+	mzi = mm_area_alloc(sizeof(struct _mmzone_impl), MM_AREA_PERSIS);
+	if(!mzi) goto error_ret;
+
+	lst_new(&mzi->_empty_slab_list);
+	lst_new(&mzi->_partial_slab_list);
+	lst_new(&mzi->_full_slab_list);
+	lst_clr(&mzi->_list_node);
+
+	mzi->_the_zone.obj_size = obj_size;
+
+	rslt = lst_push_back(&__the_mmspace->_zone_list, &mzi->_list_node);
+	if(rslt < 0) goto error_ret;
+
+	return &mzi->_the_zone;
 error_ret:
+	if(mzi)
+		mm_free(mzi);
 	return 0;
 }
 
@@ -119,14 +269,63 @@ error_ret:
 
 void* mm_zalloc(struct mmzone* mmz)
 {
+	void* p;
+	struct _mm_cache* mc;
+	struct _mmzone_impl* mzi = _conv_zone_impl(mmz);
 
+	if(!lst_empty(&mzi->_partial_slab_list))
+	{
+		mc = _mm_zfirst_cache_from_list(&mzi->_partial_slab_list);
+		if(!mc) goto error_ret;
+
+		p = _mm_zfetch_obj(mc);
+		if(!p) goto error_ret;
+
+		if(mc->_free_count <= 0)
+			_mm_zmove_cache(mc, &mzi->_partial_slab_list, &mzi->_full_slab_list);
+	}
+	else
+	{
+		mc = _mm_zfirst_cache_from_list(&mzi->_empty_slab_list);
+		if(!mc)
+		{
+			mc = _mm_zcache_new(mzi);
+			if(!mc) goto error_ret;
+
+			p = _mm_zfetch_obj(mc);
+			if(!p) goto error_ret;
+
+			_mm_zmove_cache(mc, 0, &mzi->_partial_slab_list);
+		}
+	}
+
+	return p;
 error_ret:
 	return 0;
 }
 
 long mm_zfree(struct mmzone* mmz, void* p)
 {
+	long rslt;
+	long from_full;
+	struct _mm_cache* mc;
+	struct _mmzone_impl* mzi = _conv_zone_impl(mmz);
 
+	mc = _cache_of_obj(p);
+	if(!mc || _mm_zcache_empty(mc)) goto error_ret;
+
+	from_full = _mm_zcache_full(mc);
+
+	rslt = _mm_zreturn_obj(mc, p);
+	if(rslt < 0) goto error_ret;
+
+	if(_mm_zcache_empty(mc))
+		_mm_zmove_cache(mc, &mzi->_partial_slab_list, &mzi->_empty_slab_list);
+
+	if(from_full)
+		_mm_zmove_cache(mc, &mzi->_full_slab_list, &mzi->_partial_slab_list);
+
+	return 0;
 error_ret:
 	return -1;
 }
@@ -285,6 +484,7 @@ long mm_initialize(struct mm_space_config* cfg)
 	mm->_mm_label = MM_LABEL;
 
 	rb_init(&mm->_all_section_tree, _shmm_comp_func);
+	lst_new(&mm->_zone_list);
 
 	mm->_total_shmm_count = 0;
 	mm->_usr_globl = 0;
