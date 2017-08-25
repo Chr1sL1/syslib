@@ -425,6 +425,8 @@ struct pgpool* pgp_create(void* addr, struct mm_config* cfg)
 
 	if(!addr || ((unsigned long)addr & 7) != 0 || cfg->total_size <= cfg->page_size) goto error_ret;
 
+	if(!is_2power(cfg->page_size)) goto error_ret;
+
 	pgpi = _pgp_init_chunk(addr, cfg->total_size, cfg->maxpg_count, cfg->page_size);
 	if(!pgpi) goto error_ret;
 

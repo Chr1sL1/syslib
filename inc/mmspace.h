@@ -6,6 +6,8 @@
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 // mmzone: object cache.
+// struct mmzone its self is allocated from MM_AREA_PERSIS area,
+// while cached objects are allocated from MM_AREA_ZONE area.
 
 struct mmzone
 {
@@ -21,18 +23,16 @@ long mm_zfree(struct mmzone* mmz, void* p);
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
-// mmspace: a huge block of shared memory in which the whole process's data lays
-//
-//
-//
+// mmspace: a group of shared memory in which the whole process's data lays.
 
 enum MM_AREA_TYPE
 {
 	MM_AREA_BEGIN = 0,
 
-	MM_AREA_NUBBLE_ALLOC = MM_AREA_BEGIN,
-	MM_AREA_PAGE_ALLOC,
-	MM_AREA_ZONE_ALLOC,
+	MM_AREA_NUBBLE = MM_AREA_BEGIN,		//< small memory block
+	MM_AREA_PAGE,						//< page-aligned memory block
+	MM_AREA_ZONE,						//< for mmzone object
+	MM_AREA_PERSIS,						//< for persistent data
 
 	MM_AREA_COUNT,
 };
@@ -51,6 +51,8 @@ long mm_initialize(struct mm_space_config* cfg);
 long mm_uninitialize(void);
 
 void* mm_alloc(unsigned long size);
+void* mm_area_alloc(unsigned long size, int area_type);
+
 long mm_free(void* p);
 
 #endif

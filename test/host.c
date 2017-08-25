@@ -1244,34 +1244,40 @@ void test_mm(void)
 
 	struct mm_space_config cfg;
 
-	cfg.sys_shmm_key = 1010;
+	cfg.sys_shmm_key = 1011;
 	cfg.try_huge_page = 0;
 	cfg.sys_begin_addr = 0x7ffff7fd2000;
 	cfg.max_shmm_count = 8;
 
 
-	cfg.mm_cfg[MM_AREA_NUBBLE_ALLOC] = (struct mm_config)
+	cfg.mm_cfg[MM_AREA_NUBBLE] = (struct mm_config)
 	{
-		.total_size = 200 * 1024 * 1024,
+		.total_size = 20 * 1024 * 1024,
 		.min_order = 5,
 		.max_order = 11,
 
 	};
 
-	cfg.mm_cfg[MM_AREA_PAGE_ALLOC] = (struct mm_config)
+	cfg.mm_cfg[MM_AREA_PAGE] = (struct mm_config)
 	{
 		.total_size = 20 * 1024 * 1024,
 		.page_size = 0x1000,
 		.maxpg_count = 10,
 	};
 
-	cfg.mm_cfg[MM_AREA_ZONE_ALLOC] = (struct mm_config)
+	cfg.mm_cfg[MM_AREA_ZONE] = (struct mm_config)
 	{
 		.total_size = 20 * 1024 * 1024,
 		.page_size = 0x1000,
 		.maxpg_count = 10,
 	};
 
+	cfg.mm_cfg[MM_AREA_PERSIS] = (struct mm_config)
+	{
+		.total_size = 200 * 1024 * 1024,
+		.min_order = 5,
+		.max_order = 11,
+	};
 
 	rslt = mm_initialize(&cfg);
 	if(rslt < 0) goto error_ret;
@@ -1299,7 +1305,7 @@ void test_mm(void)
 		if(tmp > 10000)
 		{
 			++slow_count;
-			printf("slow alloc: [%lu], size: [%lu], cycle:[%lu]\n", i, rnd, tmp);
+//			printf("slow alloc: [%lu], size: [%lu], cycle:[%lu]\n", i, rnd, tmp);
 		}
 //		else if(tmp < 100)
 //			printf("fast alloc: [%lu], size: [%lu], cycle:[%lu]\n", i, rnd, tmp);

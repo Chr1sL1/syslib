@@ -69,9 +69,10 @@ extern struct mm_ops __pgp_ops;
 
 static struct mm_ops* __mm_area_ops[MM_AREA_COUNT] =
 {
-	[MM_AREA_NUBBLE_ALLOC] = &__mmp_ops,
-	[MM_AREA_PAGE_ALLOC] = &__pgp_ops,
-	[MM_AREA_ZONE_ALLOC] = &__pgp_ops,
+	[MM_AREA_NUBBLE] = &__mmp_ops,
+	[MM_AREA_PAGE] = &__pgp_ops,
+	[MM_AREA_ZONE] = &__pgp_ops,
+	[MM_AREA_PERSIS] = &__mmp_ops,
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -135,10 +136,7 @@ error_ret:
 
 static inline int _make_shmm_key(long ar_type, long area_idx)
 {
-	long channel_id = ((ar_type + 1) << 4) + area_idx;
-
-	return channel_id;
-//	return ftok("/dev/null", channel_id);
+	return  ((ar_type + 1) << 8) + area_idx;
 }
 
 static inline struct shmm_blk* _conv_shmm_from_rbn(struct rbnode* rbn)
@@ -196,7 +194,6 @@ static long _mm_load_area(struct _mm_space_impl* mm)
 
 	return 0;
 error_ret:
-	printf("_mm_load_area failed.\n");
 	return -1;
 }
 
@@ -207,6 +204,8 @@ static long _mm_create_section(struct _mm_space_impl* mm, int ar_type)
 	struct _mm_area_impl* ar;
 	struct _mm_section_impl* sec = 0;
 	struct shmm_blk* shm;
+
+	if(mm->_total_shmm_count >= mm->_cfg.max_shmm_count) goto error_ret;
 
 	shmm_key = _make_shmm_key(ar_type, ++mm->_next_shmm_key);
 
@@ -245,7 +244,6 @@ static long _mm_create_section(struct _mm_space_impl* mm, int ar_type)
 
 	return 0;
 error_ret:
-	printf("_mm_creat_section failed.\n");
 	if(shm)
 		shmm_destroy(shm);
 	return -1;
@@ -312,13 +310,16 @@ error_ret:
 	return -1;
 }
 
-static void* _mm_area_alloc(unsigned long size, int ar_type)
+void* mm_area_alloc(unsigned long size, int ar_type)
 {
 	long rslt;
 	void* p;
 	struct dlnode* dln;
 	struct shmm_blk* shm;
 	struct _mm_area_impl* ar;
+
+	if(ar_type < MM_AREA_BEGIN || ar_type >= MM_AREA_COUNT)
+		goto error_ret;
 
 	ar = &__the_mmspace->_area_list[ar_type];
 
@@ -364,12 +365,12 @@ void* mm_alloc(unsigned long size)
 
 	odr = log_2(size) + 1;
 
-	if(odr < __the_mmspace->_cfg.mm_cfg[MM_AREA_NUBBLE_ALLOC].max_order)
-		ar_type = MM_AREA_NUBBLE_ALLOC;
+	if(odr < __the_mmspace->_cfg.mm_cfg[MM_AREA_NUBBLE].max_order)
+		ar_type = MM_AREA_NUBBLE;
 	else
-		ar_type = MM_AREA_PAGE_ALLOC;
+		ar_type = MM_AREA_PAGE;
 
-	return _mm_area_alloc(size, ar_type);
+	return mm_area_alloc(size, ar_type);
 
 error_ret:
 	return 0;
