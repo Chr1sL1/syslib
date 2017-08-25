@@ -11,7 +11,7 @@
 #include <sys/ipc.h>
 
 #define MM_LABEL (0x6666666666666666UL)
-#define SLAB_LABEL (0x8765432101234567UL)
+#define SLAB_LABEL (0x2222222222222222UL)
 
 struct _mm_section_impl
 {
@@ -48,8 +48,8 @@ struct _mm_space_impl
 	struct _mm_area_impl _area_list[MM_AREA_COUNT];
 
 	struct rbtree _all_section_tree;
-
 	struct _mm_shmm_save* _shmm_save_list;
+	void* _usr_globl;
 
 }__attribute__((aligned(8)));
 
@@ -62,7 +62,6 @@ struct _mmzone_impl
 };
 
 static struct _mm_space_impl* __the_mmspace = 0;
-unsigned long __mm_page_size = 0x1000;
 
 extern struct mm_ops __mmp_ops;
 extern struct mm_ops __pgp_ops;
@@ -92,18 +91,21 @@ struct _mm_cache
 	void* _obj_ptr;
 };
 
-static inline struct _mm_cache* _cache_of_obj(void* obj)
+static struct _mm_cache* _cache_of_obj(void* obj)
 {
-	struct _mm_cache* s = (struct _mm_cache*)((unsigned long)obj & ~(__mm_page_size - 1));
+	unsigned long page_size = __the_mmspace->_cfg.mm_cfg[MM_AREA_ZONE].page_size;
+
+	struct _mm_cache* s = (struct _mm_cache*)round_down((unsigned long)obj, page_size);
 
 	while(s != 0 && s->_slab_label != SLAB_LABEL)
-		s = (struct _mm_cache*)((void*)s - __mm_page_size);
+		s = (struct _mm_cache*)((void*)s - page_size);
 
 	return s;
 }
 
-struct mmzone* mm_zcreate(unsigned long obj_size)
+struct mmzone* mm_zcreate(unsigned int obj_size)
 {
+	if(!__the_mmspace) goto error_ret;
 
 error_ret:
 	return 0;
@@ -285,6 +287,7 @@ long mm_initialize(struct mm_space_config* cfg)
 	rb_init(&mm->_all_section_tree, _shmm_comp_func);
 
 	mm->_total_shmm_count = 0;
+	mm->_usr_globl = 0;
 	mm->_shmm_save_list = (struct _mm_shmm_save*)((void*)mm + sizeof(struct _mm_space_impl));
 
 	for(int i = MM_AREA_BEGIN; i < MM_AREA_COUNT; ++i)
@@ -309,6 +312,30 @@ long mm_uninitialize(void)
 error_ret:
 	return -1;
 }
+
+long mm_save_globl_data(void* p, unsigned int size)
+{
+	if(!__the_mmspace) goto error_ret;
+
+	__the_mmspace->_usr_globl = mm_area_alloc(size, MM_AREA_PERSIS);
+	if(!__the_mmspace->_usr_globl) goto error_ret;
+
+	memcpy(__the_mmspace->_usr_globl, p, size);
+
+	return 0;
+error_ret:
+	return -1;
+}
+
+inline void* mm_load_globl_data(void)
+{
+	if(!__the_mmspace) goto error_ret;
+
+	return __the_mmspace->_usr_globl;
+error_ret:
+	return 0;
+}
+
 
 void* mm_area_alloc(unsigned long size, int ar_type)
 {

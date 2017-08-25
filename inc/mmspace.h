@@ -11,10 +11,11 @@
 
 struct mmzone
 {
-	unsigned long obj_size;
+	unsigned int obj_size;
+	unsigned int padding;
 };
 
-struct mmzone* mm_zcreate(unsigned long obj_size);
+struct mmzone* mm_zcreate(unsigned int obj_size);
 long mm_zdestroy(struct mmzone* mmz);
 
 void* mm_zalloc(struct mmzone* mmz);
@@ -49,6 +50,9 @@ struct mm_space_config
 
 long mm_initialize(struct mm_space_config* cfg);
 long mm_uninitialize(void);
+
+long mm_save_globl_data(void* p, unsigned int size);
+void* mm_load_globl_data(void);
 
 void* mm_alloc(unsigned long size);
 void* mm_area_alloc(unsigned long size, int area_type);
