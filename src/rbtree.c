@@ -116,6 +116,11 @@ error_ret:
 	return 0;
 }
 
+inline void rb_reset_compare_function(struct rbtree* t, compare_function cf)
+{
+	t->cfunc = cf;
+}
+
 static inline void _left_rotate(struct rbtree* t, struct rbnode* node)
 {
 	struct rbnode* rc;

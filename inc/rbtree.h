@@ -42,6 +42,8 @@ struct rbnode* rb_search(struct rbtree* t, void* key, struct rbnode** hot);
 struct rbnode* rb_remove(struct rbtree* t, void* key);
 void rb_remove_node(struct rbtree* t, struct rbnode* x);
 
+void rb_reset_compare_function(struct rbtree* t, compare_function cf);
+
 void rb_traverse(struct rbtree* t, order_function f);
 
 //debug issue

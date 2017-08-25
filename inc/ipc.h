@@ -8,8 +8,8 @@ struct ipc_peer
 };
 
 
-struct ipc_peer* ipc_create(long channel_id, long buffer_size, long use_huge_tlb);
-struct ipc_peer* ipc_link(long channel_id);
+struct ipc_peer* ipc_create(int channel_id, long buffer_size, long use_huge_tlb);
+struct ipc_peer* ipc_link(int channel_id);
 
 long ipc_unlink(struct ipc_peer** pr);
 long ipc_destroy(struct ipc_peer** pr);

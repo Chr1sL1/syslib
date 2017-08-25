@@ -1,13 +1,16 @@
 #ifndef __mmpool_h__
 #define __mmpool_h__
 
+
+struct mm_config;
+
 struct mmpool
 {
 	void* addr_begin;
 	void* addr_end;
 };
 
-struct mmpool* mmp_create(void* addr, unsigned long size, unsigned int min_block_order, unsigned int max_block_order);
+struct mmpool* mmp_create(void* addr, struct mm_config* cfg);
 struct mmpool* mmp_load(void* addr);
 void mmp_destroy(struct mmpool* mmp);
 

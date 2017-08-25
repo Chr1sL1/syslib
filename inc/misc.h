@@ -11,6 +11,10 @@ long is_2power(unsigned long val);
 unsigned long align8(unsigned long val);
 unsigned long align16(unsigned long val);
 
+unsigned long round_up(unsigned long val, unsigned long boundary);
+unsigned long round_down(unsigned long val, unsigned long boundary);
+
+
 long quick_mmcpy_a(void* dst, void* src, unsigned long size);
 long quick_mmcpy_u(void* dst, void* src, unsigned long size);
 long quick_mmcpy(void* dst, void* src, unsigned long size);

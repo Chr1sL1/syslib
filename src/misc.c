@@ -98,15 +98,25 @@ unsigned long log_2(unsigned long val)
 }
 
 
-unsigned long align8(unsigned long val)
+inline unsigned long align8(unsigned long val)
 {
 	return ((val + 7) & ~7);
 
 }
 
-unsigned long align16(unsigned long val)
+inline unsigned long align16(unsigned long val)
 {
 	return ((val + 15) & ~15);
+}
+
+inline unsigned long round_up(unsigned long val, unsigned long boundary)
+{
+	return ((val + boundary - 1) & ~(boundary - 1));
+}
+
+inline unsigned long round_down(unsigned long val, unsigned long boundary)
+{
+	return (val & ~(boundary - 1));
 }
 
 inline void* move_ptr_align8(void* ptr, unsigned long offset)

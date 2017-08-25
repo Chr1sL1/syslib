@@ -1,13 +1,16 @@
 #ifndef __pgpool_h__
 #define __pgpool_h__
 
+
+struct mm_config;
+
 struct pgpool
 {
 	void* addr_begin;
 	void* addr_end;
 };
 
-struct pgpool* pgp_create(void* addr, unsigned long size, unsigned long maxpg_count);
+struct pgpool* pgp_create(void* addr, struct mm_config* cfg);
 struct pgpool* pgp_load(void* addr);
 void pgp_destroy(struct pgpool* up);
 

@@ -1,8 +1,7 @@
 #ifndef __mmspace_h__
 #define __mmspace_h__
 
-#include "dlist.h"
-
+#include "mmops.h"
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -11,11 +10,10 @@
 struct mmzone
 {
 	unsigned long obj_size;
-	unsigned long current_free_count;
 };
 
 struct mmzone* mm_zcreate(unsigned long obj_size);
-long mmz_zdestroy(struct mmzone* mmz);
+long mm_zdestroy(struct mmzone* mmz);
 
 void* mm_zalloc(struct mmzone* mmz);
 long mm_zfree(struct mmzone* mmz, void* p);
@@ -24,24 +22,32 @@ long mm_zfree(struct mmzone* mmz, void* p);
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 // mmspace: a huge block of shared memory in which the whole process's data lays
+//
+//
+//
 
-struct mm_config
+enum MM_AREA_TYPE
 {
-	unsigned long total_size;
-	unsigned long maxpg_count;
+	MM_AREA_BEGIN = 0,
 
-	struct mm_buddy_sys
-	{
-		unsigned long size;
-		unsigned int min_block_order;
-		unsigned int max_block_order;
-	} buddy_cfg;
+	MM_AREA_NUBBLE_ALLOC = MM_AREA_BEGIN,
+	MM_AREA_PAGE_ALLOC,
+	MM_AREA_ZONE_ALLOC,
+
+	MM_AREA_COUNT,
 };
 
-long mm_initialize(struct mm_config* cfg, long shmm_key, int try_huge_page);
+struct mm_space_config
+{
+	unsigned long sys_begin_addr;
+	int sys_shmm_key;
+	int try_huge_page;
+	int max_shmm_count;
 
-long mm_load(const char* mm_inf_file);
-long mm_save(const char* mm_inf_file);
+	struct mm_config mm_cfg[MM_AREA_COUNT];
+};
+
+long mm_initialize(struct mm_space_config* cfg);
 long mm_uninitialize(void);
 
 void* mm_alloc(unsigned long size);

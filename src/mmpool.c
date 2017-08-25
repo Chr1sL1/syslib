@@ -1,6 +1,7 @@
 #include "mmpool.h"
-#include "misc.h"
+#include "mmops.h"
 #include "dlist.h"
+#include "misc.h"
 #include <stdio.h>
 
 // absolutely not thread-safe.
@@ -103,6 +104,45 @@ static long _take_free_node(struct _mmpool_impl* mmpi, long flh_idx, struct _blo
 
 static struct _mmpool_impl* _mmp_init_chunk(void* addr, unsigned long size, unsigned int min_block_order, unsigned int max_block_order);
 static struct _mmpool_impl* _mmp_load_chunk(void* addr);
+
+
+static void* __mmp_create_agent(void* addr, struct mm_config* cfg)
+{
+	return mmp_create(addr, cfg);
+}
+
+static void* __mmp_load_agent(void* addr)
+{
+	return mmp_load(addr);
+}
+
+static void __mmp_destroy_agent(void* alloc)
+{
+	mmp_destroy((struct mmpool*)alloc);
+}
+
+static void* __mmp_alloc_agent(void* alloc, unsigned long size)
+{
+	return mmp_alloc((struct mmpool*)alloc, size);
+}
+
+static long __mmp_free_agent(void* alloc, void* p)
+{
+	return mmp_free((struct mmpool*)alloc, p);
+}
+
+struct mm_ops __mmp_ops =
+{
+	.create_func = __mmp_create_agent,
+	.load_func = __mmp_load_agent,
+	.destroy_func = __mmp_destroy_agent,
+
+	.alloc_func = __mmp_alloc_agent,
+	.free_func = __mmp_free_agent,
+};
+
+
+
 
 static inline long _block_size(long idx)
 {
@@ -614,9 +654,6 @@ static struct _mmpool_impl* _mmp_init_chunk(void* addr, unsigned long size, unsi
 	mmpi->_pool.addr_begin = addr;
 	mmpi->_pool.addr_end = (void*)align8((unsigned long)addr + size);
 
-//	hd->_addr_begin = (unsigned long)mmpi->_pool.addr_begin;
-//	hd->_addr_end = (unsigned long)mmpi->_pool.addr_end;
-
 	mmpi->_cfg._min_block_order = min_block_order;
 	mmpi->_cfg._max_block_order = max_block_order;
 	mmpi->_cfg._free_list_count = max_block_order - min_block_order + 1;
@@ -678,18 +715,12 @@ error_ret:
 
 static struct _mmpool_impl* _mmp_load_chunk(void* addr)
 {
-	void* chk;
-	void* end;
-	long blk_size;
-	long payload_size;
-	long rslt = 0;
 	void* cur_section;
-	struct _block_head* bhd;
 	struct _mmpool_impl* mmpi;
 
-	mmpi = (struct _mmpool_impl*)(addr);
+	mmpi = _conv_mmp((struct mmpool*)(addr));
 	if(mmpi->_chunck_label != CHUNK_LABEL) goto error_ret;
-	if(mmpi->_pool.addr_begin != addr || mmpi->_pool.addr_end <= addr) goto error_ret;
+	if(mmpi->_pool.addr_begin != mmpi || mmpi->_pool.addr_end <= addr) goto error_ret;
 
 	cur_section = move_ptr_align64(addr, sizeof(struct _mmpool_impl));
 
@@ -698,7 +729,7 @@ error_ret:
 	return 0;
 }
 
-struct mmpool* mmp_create(void* addr, unsigned long size, unsigned int min_block_order, unsigned int max_block_order)
+struct mmpool* mmp_create(void* addr, struct mm_config* cfg)
 {
 	struct _mmpool_impl* mmpi = 0;
 	long result = 0;
@@ -706,11 +737,11 @@ struct mmpool* mmp_create(void* addr, unsigned long size, unsigned int min_block
 	if(!addr) goto error_ret;
 
 	// chunk must be 8-byte aligned.
-	if((((unsigned long)addr) & 63) != 0) goto error_ret;
-	if(size < _block_size(min_block_order)) goto error_ret;
-	if(size > 0xFFFFFFFF) goto error_ret;
+	if((((unsigned long)addr) & 7) != 0) goto error_ret;
+	if(cfg->total_size < _block_size(cfg->min_order)) goto error_ret;
+	if(cfg->total_size > 0xFFFFFFFF) goto error_ret;
 
-	mmpi = _mmp_init_chunk(addr, size, min_block_order, max_block_order);
+	mmpi = _mmp_init_chunk(addr, cfg->total_size, cfg->min_order, cfg->max_order);
 
 	if(!mmpi) goto error_ret;
 
@@ -725,7 +756,7 @@ struct mmpool* mmp_load(void* addr)
 {
 	struct _mmpool_impl* mmpi;
 
-	if((((unsigned long)addr) & 63) != 0) goto error_ret;
+	if((((unsigned long)addr) & 7) != 0) goto error_ret;
 
 	mmpi = _mmp_load_chunk(addr);
 

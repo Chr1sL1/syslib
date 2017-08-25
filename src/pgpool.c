@@ -1,10 +1,11 @@
 #include "pgpool.h"
+#include "mmops.h"
 #include "dlist.h"
 #include "misc.h"
 #include "rbtree.h"
 #include <stdio.h>
 
-#define PG_SIZE			(4096)
+//#define PG_SIZE			(4096)
 #define PG_SIZE_SHIFT	(12)
 
 #define PGP_CHUNK_LABEL (0xbaba2121fdfd9696UL)
@@ -50,6 +51,7 @@ struct _pgp_cfg
 {
 	unsigned long maxpg_count;
 	unsigned long freelist_count;
+	unsigned long pg_size;
 }__attribute__((aligned(8)));
 
 struct _pgpool_impl
@@ -68,10 +70,42 @@ struct _pgpool_impl
 	struct _pg_node* _pgn_pool;
 }__attribute__((aligned(8)));
 
-static inline unsigned long _align_pg(unsigned long addr)
+static void* __pgp_create_agent(void* addr, struct mm_config* cfg)
 {
-	return (addr + (PG_SIZE - 1)) & (~(PG_SIZE - 1));
+	return pgp_create(addr, cfg);
 }
+
+
+static void* __pgp_load_agent(void* addr)
+{
+	return pgp_load(addr);
+}
+
+static void __pgp_destroy_agent(void* alloc)
+{
+	pgp_destroy((struct pgpool*)alloc);
+}
+
+static void* __pgp_alloc_agent(void* alloc, unsigned long size)
+{
+	return pgp_alloc((struct pgpool*)alloc, size);
+}
+
+static long __pgp_free_agent(void* alloc, void* p)
+{
+	return pgp_free((struct pgpool*)alloc, p);
+}
+
+struct mm_ops __pgp_ops =
+{
+	.create_func = __pgp_create_agent,
+	.load_func = __pgp_load_agent,
+	.destroy_func = __pgp_destroy_agent,
+
+	.alloc_func = __pgp_alloc_agent,
+	.free_func = __pgp_free_agent,
+};
+
 
 static inline struct _pgpool_impl* _conv_impl(struct pgpool* pgp)
 {
@@ -236,7 +270,7 @@ candi_found:
 	if(candi_pgn->_pg_count > pg_count)
 	{
 		struct _pg_node* new_pgn = _fetch_free_pgn(pgpi);
-		_set_payload(new_pgn, _get_payload(candi_pgn) + pg_count * PG_SIZE);
+		_set_payload(new_pgn, _get_payload(candi_pgn) + pg_count * pgpi->_cfg.pg_size);
 		new_pgn->_pg_count = candi_pgn->_pg_count - pg_count;
 		candi_pgn->_pg_count = pg_count;
 
@@ -252,7 +286,7 @@ error_ret:
 
 static inline long _merge_free_node(struct _pgpool_impl* pgpi, struct _pg_node* prev, struct _pg_node* next)
 {
-	if(_get_payload(next) != _get_payload(prev) + prev->_pg_count * PG_SIZE)
+	if(_get_payload(next) != _get_payload(prev) + prev->_pg_count * pgpi->_cfg.pg_size)
 		goto error_ret;
 
 	_unlink_fln(pgpi, next);
@@ -292,7 +326,7 @@ error_ret:
 	return -1;
 }
 
-static struct _pgpool_impl* _pgp_init_chunk(void* addr, unsigned long size, unsigned long maxpg_count)
+static struct _pgpool_impl* _pgp_init_chunk(void* addr, unsigned long size, unsigned int maxpg_count, unsigned int pg_size)
 {
 	struct _pgpool_impl* pgpi;
 	long remain_count, flh_idx, rslt;
@@ -305,13 +339,14 @@ static struct _pgpool_impl* _pgp_init_chunk(void* addr, unsigned long size, unsi
 
 	pgpi->_chunck_label = PGP_CHUNK_LABEL;
 	pgpi->_the_pool.addr_begin = addr;
-	pgpi->_the_pool.addr_end = (void*)_align_pg((unsigned long)addr + size);
+	pgpi->_the_pool.addr_end = (void*)round_down((unsigned long)addr + size, pg_size);
 
 	lst_new(&pgpi->_free_pgn_list);
 	rb_init(&pgpi->_pgn_tree, 0);
 
 	pgpi->_cfg.maxpg_count = maxpg_count;
 	pgpi->_cfg.freelist_count = log_2(maxpg_count) + 1;
+	pgpi->_cfg.pg_size = pg_size;
 
 	pgpi->_flh = (struct _free_list_head*)cur_offset;
 	cur_offset += sizeof(struct _free_list_head) * pgpi->_cfg.freelist_count;
@@ -321,11 +356,11 @@ static struct _pgpool_impl* _pgp_init_chunk(void* addr, unsigned long size, unsi
 		lst_new(&pgpi->_flh[i]._free_list);
 	}
 
-	pgpi->_chunk_pgcount = (pgpi->_the_pool.addr_end - cur_offset) / (PG_SIZE + sizeof(struct _pg_node));
+	pgpi->_chunk_pgcount = (pgpi->_the_pool.addr_end - cur_offset) / (pg_size+ sizeof(struct _pg_node));
 
 	pgpi->_pgn_pool = (struct _pg_node*)cur_offset;
 	cur_offset = move_ptr_align64(cur_offset, sizeof(struct _pg_node) * pgpi->_chunk_pgcount);
-	cur_offset = (void*)_align_pg((unsigned long)cur_offset);
+	cur_offset = (void*)round_up((unsigned long)cur_offset, pg_size);
 
 	pgpi->_chunk_addr = cur_offset;
 
@@ -335,7 +370,7 @@ static struct _pgpool_impl* _pgp_init_chunk(void* addr, unsigned long size, unsi
 		lst_push_back(&pgpi->_free_pgn_list, &pgpi->_pgn_pool[i]._free_pgn_node);
 	}
 
-	chunk_pg_count = (pgpi->_the_pool.addr_end - cur_offset) / PG_SIZE;
+	chunk_pg_count = (pgpi->_the_pool.addr_end - cur_offset) / pg_size;
 
 	remain_count = pgpi->_chunk_pgcount - pgpi->_cfg.maxpg_count;
 	pg = pgpi->_chunk_addr;
@@ -355,7 +390,7 @@ static struct _pgpool_impl* _pgp_init_chunk(void* addr, unsigned long size, unsi
 
 		if(rslt < 0) goto error_ret;
 
-		pg += pgn->_pg_count * PG_SIZE;
+		pg += pgn->_pg_count * pg_size;
 		remain_count -= pgn->_pg_count;
 	}
 
@@ -369,13 +404,13 @@ static struct _pgpool_impl* _pgp_load_chunk(void* addr)
 	void* cur_offset;
 	struct _pgpool_impl* pgpi;
 
-	pgpi = (struct _pgpool_impl*)addr;
+	pgpi = _conv_impl((struct pgpool*)addr);
 	cur_offset = move_ptr_align64(addr, sizeof(struct _pgpool_impl));
 
 	if(pgpi->_chunck_label != PGP_CHUNK_LABEL)
 		goto error_ret;
 
-	if(pgpi->_the_pool.addr_begin != addr || addr >= pgpi->_the_pool.addr_end)
+	if(pgpi->_the_pool.addr_begin != pgpi || addr >= pgpi->_the_pool.addr_end)
 		goto error_ret;
 
 	return pgpi;
@@ -383,14 +418,14 @@ error_ret:
 	return 0;
 }
 
-struct pgpool* pgp_create(void* addr, unsigned long size, unsigned long maxpg_count)
+struct pgpool* pgp_create(void* addr, struct mm_config* cfg)
 {
 	long rslt = 0;
 	struct _pgpool_impl* pgpi;
 
-	if(!addr || ((unsigned long)addr & 63) != 0 || size <= PG_SIZE) goto error_ret;
+	if(!addr || ((unsigned long)addr & 7) != 0 || cfg->total_size <= cfg->page_size) goto error_ret;
 
-	pgpi = _pgp_init_chunk(addr, size, maxpg_count);
+	pgpi = _pgp_init_chunk(addr, cfg->total_size, cfg->maxpg_count, cfg->page_size);
 	if(!pgpi) goto error_ret;
 
 	return &pgpi->_the_pool;
@@ -405,7 +440,7 @@ struct pgpool* pgp_load(void* addr)
 {
 	struct _pgpool_impl* pgpi;
 
-	if(!addr || ((unsigned long)addr & 63) != 0) goto error_ret;
+	if(!addr || ((unsigned long)addr & 7) != 0) goto error_ret;
 
 	pgpi = _pgp_load_chunk(addr);
 	if(!pgpi) goto error_ret;
@@ -436,7 +471,9 @@ void* pgp_alloc(struct pgpool* pgp, unsigned long size)
 	struct _pg_node* pgn;
 	struct _pgpool_impl* pgpi = _conv_impl(pgp);
 
-	pg_count = (size + PG_SIZE - 1) >> PG_SIZE_SHIFT;
+	pg_count = round_up(size, pgpi->_cfg.pg_size) / pgpi->_cfg.pg_size;
+
+//	pg_count = (size + PG_SIZE - 1) >> PG_SIZE_SHIFT;
 
 	rslt = _take_free_node(pgpi, pg_count, &pgn);
 	if(rslt < 0 || !pgn) goto error_ret;
@@ -455,7 +492,7 @@ long pgp_free(struct pgpool* pgp, void* payload)
 	struct _pg_node* pgn;
 	struct _pgpool_impl* pgpi = _conv_impl(pgp);
 
-	if(((unsigned long)payload & (PG_SIZE - 1)) != 0)
+	if(((unsigned long)payload & (pgpi->_cfg.pg_size - 1)) != 0)
 		goto error_ret;
 
 	pgn = _pgn_from_payload(pgpi, payload);
