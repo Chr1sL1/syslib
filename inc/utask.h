@@ -14,7 +14,7 @@ struct utask
 };
 
 // for temp use
-struct utask* utsk_create(void* stackptr, long stacksize, task_function tfunc);
+struct utask* utsk_create(long stacksize, task_function tfunc);
 void utsk_destroy(struct utask* tsk);
 //
 

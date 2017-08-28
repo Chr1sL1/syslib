@@ -1,8 +1,7 @@
 #include "utask.h"
 #include "rbtree.h"
 #include "misc.h"
-#include <stdlib.h>
-#include <string.h>
+#include "mmspace.h"
 
 #define UTASK_MAGIC_NUM	 0x1234567887654321
 
@@ -60,40 +59,39 @@ extern void asm_run_task(struct _utask_impl* tsk, void* udata);
 extern void asm_yield_task(struct _utask_impl* tsk);
 extern void asm_resume_task(struct _utask_impl* tsk);
 
+static struct mmzone* __utsk_zone = 0;
+
 static struct _utask_impl* _conv_task(struct utask* tsk)
 {
-	struct _utask_impl* itsk = 0;
-	if(!tsk) goto error_ret;
-
-	itsk = (struct _utask_impl*)tsk;
-	if(itsk->_magic_number != UTASK_MAGIC_NUM) goto error_ret;
-
-	return itsk;
-error_ret:
-	return 0;
+	return (struct _utask_impl*)((unsigned long)tsk - (unsigned long)&((struct _utask_impl*)0)->_utsk);
 }
 
-struct utask* utsk_create(void* stack_ptr, long stack_size, task_function tfunc)
+struct utask* utsk_create(long stack_size, task_function tfunc)
 {
-	struct _utask_impl* tsk = (struct _utask_impl*)malloc(sizeof(struct _utask_impl));
+	struct _utask_impl* tsk;
 
 	if(!tsk) goto error_ret;
-	if(!stack_ptr) goto error_ret;
 	if(stack_size <= 0) goto error_ret;
 	if(!tfunc) goto error_ret;
 
-	if(((unsigned long)stack_ptr & 0x7) != 0)
-		goto error_ret;
+	if(!__utsk_zone)
+		__utsk_zone = mm_zcreate(sizeof(struct _utask_impl));
 
-	memset(tsk, 0, sizeof(struct _utask_impl));
-	tsk->_utsk.stk = stack_ptr;
+	tsk = mm_zalloc(__utsk_zone);
+	if(!tsk) goto error_ret;
+
 	tsk->_utsk.stk_size = stack_size;
 	tsk->_utsk.tsk_func = tfunc;
 	tsk->_magic_number = UTASK_MAGIC_NUM;
 	tsk->_task_state = uts_inited;
 
+	tsk->_utsk.stk = mm_alloc(stack_size);
+	if(!tsk->_utsk.stk) goto error_ret;
+
 	return &tsk->_utsk;
 error_ret:
+	if(tsk)
+		 mm_zfree(__utsk_zone, tsk);
 	return 0;
 }
 
@@ -102,7 +100,11 @@ void utsk_destroy(struct utask* tsk)
 	struct _utask_impl* t = _conv_task(tsk);
 	if(!t) goto error_ret;
 
-	free(t);
+	if(t->_utsk.stk)
+		mm_free(t->_utsk.stk);
+
+	mm_zfree(__utsk_zone, t);
+
 error_ret:
 	return;
 }

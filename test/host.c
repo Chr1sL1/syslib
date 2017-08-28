@@ -203,20 +203,19 @@ void tfun(struct utask* t, void* p)
 {
 	for(int i = 0; i < sizeof(test_arr) / sizeof(int); i++)
 	{
-//		printf("arr[i] = %d\n", test_arr[i]);
+		printf("arr[i] = %d\n", test_arr[i]);
 
 		if(i % 2 == 0)
 			utsk_yield(t);
 
-//		sleep(1);
+		usleep(100);
 	}
 }
 
 void test_task(void)
 {
 	unsigned long r1 = 0, r2 = 0;
-	void* ustack = malloc(1024);
-	struct utask* tsk = utsk_create(ustack, 1024, tfun);
+	struct utask* tsk = utsk_create(1024, tfun);
 	if(!tsk) goto error_ret;
 
 	for(int i = 0; i < sizeof(test_arr) / sizeof(int); i++)
@@ -227,24 +226,25 @@ void test_task(void)
 	r1 = rdtsc();
 	utsk_run(tsk, 0);
 	r2 = rdtsc();
-	printf("runtask: %lu cycles.\n", r2 - r1);
+//	printf("runtask: %lu cycles.\n", r2 - r1);
 
 	for(int i = 0; i < sizeof(test_arr) / sizeof(int); i++)
 	{
-//		printf("%d\n", test_arr[i]);
+		printf("%d\n", test_arr[i]);
 		if(i % 3 == 0)
 		{
 			r1 = rdtsc();
 			utsk_resume(tsk);
 			r2 = rdtsc();
-			printf("resume: %lu cycles.\n", r2 - r1);
+//			printf("resume: %lu cycles.\n", r2 - r1);
 		}
 
-//		sleep(1);
+		usleep(100);
 	}
 
+	utsk_destroy(tsk);
+
 error_ret:
-	free(ustack);
 	return;
 }
 
@@ -1293,6 +1293,7 @@ void test_mm(void)
 	rslt = mm_zfree(mmz, p);
 	if(rslt < 0) goto error_ret;
 
+	test_task();
 
 	for(long i = 0; i < count; i++)
 	{
