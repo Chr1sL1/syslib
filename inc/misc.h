@@ -14,8 +14,8 @@ unsigned long align16(unsigned long val);
 unsigned long round_up(unsigned long val, unsigned long boundary);
 unsigned long round_down(unsigned long val, unsigned long boundary);
 
-unsigned long bsf(unsigned long val);
-unsigned long bsr(unsigned long val);
+long bsf(unsigned long val);
+long bsr(unsigned long val);
 
 long quick_mmcpy_a(void* dst, void* src, unsigned long size);
 long quick_mmcpy_u(void* dst, void* src, unsigned long size);

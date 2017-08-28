@@ -1241,10 +1241,12 @@ void test_mm(void)
 	unsigned long alloc_max_size = 0, free_max_size = 0;
 	unsigned long count = 100000;
 	unsigned long slow_count = 0;
+	void* p;
 
 	struct mm_space_config cfg;
+	struct mmzone* mmz;
 
-	cfg.sys_shmm_key = 1011;
+	cfg.sys_shmm_key = 104;
 	cfg.try_huge_page = 0;
 	cfg.sys_begin_addr = 0x7ffff7fd2000;
 	cfg.max_shmm_count = 8;
@@ -1282,6 +1284,16 @@ void test_mm(void)
 	rslt = mm_initialize(&cfg);
 	if(rslt < 0) goto error_ret;
 
+	mmz = mm_zcreate(385);
+	if(!mmz) goto error_ret;
+
+	p = mm_zalloc(mmz);
+	if(!p) goto error_ret;
+
+	rslt = mm_zfree(mmz, p);
+	if(rslt < 0) goto error_ret;
+
+
 	for(long i = 0; i < count; i++)
 	{
 		rnd = 64 + random() % (1024 - 64);
@@ -1305,10 +1317,7 @@ void test_mm(void)
 		if(tmp > 10000)
 		{
 			++slow_count;
-//			printf("slow alloc: [%lu], size: [%lu], cycle:[%lu]\n", i, rnd, tmp);
 		}
-//		else if(tmp < 100)
-//			printf("fast alloc: [%lu], size: [%lu], cycle:[%lu]\n", i, rnd, tmp);
 
 		if(!p)
 		{
@@ -1331,7 +1340,6 @@ void test_mm(void)
 		}
 	}
 
-//	rslt = mmp_check(pool);
 
 	printf("[avg] alloc cycle: %lu, free cycle: %lu.\n", alloc_sum / count, free_sum / count);
 	printf("[max] alloc cycle: %lu, free cycle: %lu.\n", alloc_max, free_max);

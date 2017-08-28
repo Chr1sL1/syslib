@@ -13,6 +13,7 @@
 #define MM_LABEL (0x6666666666666666UL)
 #define SLAB_LABEL (0x2222222222222222UL)
 #define CACHE_OBJ_COUNT (32)
+#define CACHE_OBJ_COUNT_MAX (64)
 
 struct _mm_section_impl
 {
@@ -58,6 +59,8 @@ struct _mm_space_impl
 struct _mmzone_impl
 {
 	struct mmzone _the_zone;
+	unsigned long _cache_size;
+
 	struct dlist _full_slab_list;
 	struct dlist _empty_slab_list;
 	struct dlist _partial_slab_list;
@@ -113,13 +116,17 @@ static inline struct _mm_cache* _conv_cache(struct dlnode* dln)
 	return (struct _mm_cache*)((unsigned long)dln- (unsigned long)&((struct _mm_cache*)(0))->_list_node);
 }
 
-static inline struct _mm_cache* _cache_of_obj(void* obj)
+static struct _mm_cache* _cache_of_obj(void* obj)
 {
-	struct _mm_cache* mmc = (struct _mm_cache*)round_down((unsigned long)obj, __the_mmspace->_cfg.mm_cfg[MM_AREA_ZONE].page_size);
-	if(mmc->_slab_label != SLAB_LABEL) goto error_ret;
+	void* p = (void*)round_down((unsigned long)obj, __the_mmspace->_cfg.mm_cfg[MM_AREA_ZONE].page_size);
 
-	return mmc;
-error_ret:
+	for(unsigned int i = 0; i < __the_mmspace->_cfg.mm_cfg[MM_AREA_ZONE].maxpg_count; ++i)
+	{
+		struct _mm_cache* mmc = (struct _mm_cache*)(p - i * __the_mmspace->_cfg.mm_cfg[MM_AREA_ZONE].page_size);
+		if(mmc->_slab_label == SLAB_LABEL)
+			return mmc;
+	}
+
 	return 0;
 }
 
@@ -131,11 +138,6 @@ static inline long _mm_zcache_full(struct _mm_cache* mc)
 static inline long _mm_zcache_empty(struct _mm_cache* mc)
 {
 	return mc->_free_count >= mc->_obj_count;
-}
-
-static inline void* _mm_zalloc_pg(void)
-{
-	return mm_area_alloc(__the_mmspace->_cfg.mm_cfg[MM_AREA_ZONE].page_size, MM_AREA_ZONE);
 }
 
 static inline int _mmc_next_free_obj(struct _mm_cache* mc)
@@ -205,19 +207,56 @@ error_ret:
 	return 0;
 }
 
+static void _mm_ztry_recall_empty_cache(struct _mmzone_impl* mzi)
+{
+	struct dlnode* dln = mzi->_empty_slab_list.head.next;
+	while(dln != &mzi->_empty_slab_list.tail)
+	{
+		struct _mm_cache* mc = _conv_cache(dln);
+		mm_free(mc);
+		dln = dln->next;
+	}
+
+	lst_new(&mzi->_empty_slab_list);
+}
+
+static void _mm_ztry_recall(void)
+{
+	struct dlnode* dln = __the_mmspace->_zone_list.head.next;
+	while(dln != &__the_mmspace->_zone_list.tail)
+	{
+		struct _mmzone_impl* mzi = _conv_zone_lst_node(dln);
+		_mm_ztry_recall_empty_cache(mzi);
+		dln = dln->next;
+	}
+}
+
+static inline void* _mm_zalloc_pg(struct _mmzone_impl* mzi)
+{
+	unsigned long alloc_size = mzi->_the_zone.obj_size * CACHE_OBJ_COUNT + sizeof(struct _mm_cache); 
+	void* pg = mm_area_alloc(alloc_size, MM_AREA_ZONE);
+	if(!pg)
+	{
+		_mm_ztry_recall();
+		pg = mm_area_alloc(alloc_size, MM_AREA_ZONE);
+	}
+
+	return pg;
+}
+
+
 static struct _mm_cache* _mm_zcache_new(struct _mmzone_impl* mzi)
 {
-	unsigned int pg_size = __the_mmspace->_cfg.mm_cfg[MM_AREA_ZONE].page_size; 
-
-	struct _mm_cache* mc = (struct _mm_cache*)_mm_zalloc_pg();
+	struct _mm_cache* mc = (struct _mm_cache*)_mm_zalloc_pg(mzi);
 	if(!mc) goto error_ret;
 
 	mc->_slab_label = SLAB_LABEL;
 	mc->_zone = mzi;
 	lst_clr(&mc->_list_node);
 
-	mc->_obj_count = (pg_size - sizeof(struct _mm_cache)) / mzi->_the_zone.obj_size;
-	mc->_obj_ptr = (void*)mc + pg_size - mc->_obj_count * mzi->_the_zone.obj_size;
+	mc->_obj_count = (mzi->_cache_size - sizeof(struct _mm_cache)) / mzi->_the_zone.obj_size;
+	mc->_obj_count = mc->_obj_count <= CACHE_OBJ_COUNT_MAX ? mc->_obj_count : CACHE_OBJ_COUNT_MAX;
+	mc->_obj_ptr = (void*)mc + mzi->_cache_size - mc->_obj_count * mzi->_the_zone.obj_size;
 
 	mc->_alloc_bits = 0;
 	mc->_free_count = mc->_obj_count;
@@ -233,12 +272,15 @@ error_ret:
 struct mmzone* mm_zcreate(unsigned int obj_size)
 {
 	long rslt;
+	unsigned long cache_size;
 	struct _mmzone_impl* mzi;
 	if(!__the_mmspace) goto error_ret;
 
 	obj_size = round_up(obj_size, 8);
 
-	if(obj_size * CACHE_OBJ_COUNT + sizeof(struct _mm_cache) > __the_mmspace->_cfg.mm_cfg[MM_AREA_ZONE].page_size)
+	cache_size = round_up(obj_size * CACHE_OBJ_COUNT + sizeof(struct _mm_cache), __the_mmspace->_cfg.mm_cfg[MM_AREA_ZONE].page_size);
+
+	if(cache_size >= __the_mmspace->_cfg.mm_cfg[MM_AREA_ZONE].page_size * __the_mmspace->_cfg.mm_cfg[MM_AREA_ZONE].maxpg_count)
 		goto error_ret;
 
 	mzi = mm_area_alloc(sizeof(struct _mmzone_impl), MM_AREA_PERSIS);
@@ -250,6 +292,7 @@ struct mmzone* mm_zcreate(unsigned int obj_size)
 	lst_clr(&mzi->_list_node);
 
 	mzi->_the_zone.obj_size = obj_size;
+	mzi->_cache_size = cache_size;
 
 	rslt = lst_push_back(&__the_mmspace->_zone_list, &mzi->_list_node);
 	if(rslt < 0) goto error_ret;
@@ -335,9 +378,9 @@ error_ret:
 // mmspace:
 //
 
-static inline int _make_shmm_key(long ar_type, long area_idx)
+static inline int _make_shmm_key(struct _mm_space_impl* mm, long ar_type, long area_idx)
 {
-	return  ((ar_type + 1) << 8) + area_idx;
+	return  (mm->_cfg.sys_shmm_key) << 16 + ((ar_type + 1) << 8) + area_idx;
 }
 
 static inline struct shmm_blk* _conv_shmm_from_rbn(struct rbnode* rbn)
@@ -408,7 +451,7 @@ static long _mm_create_section(struct _mm_space_impl* mm, int ar_type)
 
 	if(mm->_total_shmm_count >= mm->_cfg.max_shmm_count) goto error_ret;
 
-	shmm_key = _make_shmm_key(ar_type, ++mm->_next_shmm_key);
+	shmm_key = _make_shmm_key(mm, ar_type, ++mm->_next_shmm_key);
 
 	shm = shmm_create(shmm_key, 0, mm->_cfg.mm_cfg[ar_type].total_size, mm->_cfg.try_huge_page);
 	if(!shm) goto error_ret;
@@ -428,7 +471,7 @@ static long _mm_create_section(struct _mm_space_impl* mm, int ar_type)
 	sec = (struct _mm_section_impl*)(shm->addr_begin);
 
 	sec->_area_type = ar_type;
-	sec->_padding = 0x12345678;
+	sec->_padding = 0;
 
 	sec->_allocator = (*__mm_area_ops[ar_type]->create_func)(shm->addr_begin + sizeof(struct _mm_section_impl), &mm->_cfg.mm_cfg[ar_type]);
 	if(!sec->_allocator) goto error_ret;

@@ -120,17 +120,21 @@ inline unsigned long round_down(unsigned long val, unsigned long boundary)
 }
 
 
-inline unsigned long bsf(unsigned long val)
+inline long bsf(unsigned long val)
 {
-	unsigned long ret;
-	asm("bsfq %1, %0":"=r"(ret):"r"(val));
+	long ret = -1;
+	if(val != 0)
+		asm("bsfq %1, %0":"=r"(ret):"r"(val));
+
 	return ret;
 }
 
-inline unsigned long bsr(unsigned long val)
+inline long bsr(unsigned long val)
 {
-	unsigned long ret;
-	asm("bsrq %1, %0":"=r"(ret):"r"(val));
+	long ret = -1;
+	if(val != 0)
+		asm("bsrq %1, %0":"=r"(ret):"r"(val));
+
 	return ret;
 }
 
