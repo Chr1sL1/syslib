@@ -82,7 +82,7 @@ void signal_stop(int sig, siginfo_t* t, void* usr_data)
 void test_rbtree(void)
 {
 	unsigned long r1 = 0, r2 = 0;
-	int test_arr_count= sizeof(test_arr) / sizeof(int);
+	int test_arr_count= sizeof(test_arr) / sizeof(long);
 	struct timeval tv_begin, tv_end;
 
 	for(int i = 0; i < test_arr_count; i++) 
@@ -160,7 +160,7 @@ void test_lst(void)
 	struct dlist lst;
 	struct kt* k = NULL;
 	lst_new(&lst);
-	int test_arr_count= sizeof(test_arr) / sizeof(int);
+	int test_arr_count= sizeof(test_arr) / sizeof(long);
 
 	for(int i = 0; i < test_arr_count; i++) 
 		test_arr[i] = i;
@@ -201,7 +201,7 @@ void test_lst(void)
 
 void tfun(struct utask* t, void* p)
 {
-	for(int i = 0; i < sizeof(test_arr) / sizeof(int); i++)
+	for(int i = 0; i < sizeof(test_arr) / sizeof(long); i++)
 	{
 		printf("arr[i] = %d\n", test_arr[i]);
 
@@ -218,7 +218,7 @@ void test_task(void)
 	struct utask* tsk = utsk_create(1024, tfun);
 	if(!tsk) goto error_ret;
 
-	for(int i = 0; i < sizeof(test_arr) / sizeof(int); i++)
+	for(int i = 0; i < sizeof(test_arr) / sizeof(long); i++)
 	{
 		test_arr[i] = i;
 	}
@@ -228,7 +228,7 @@ void test_task(void)
 	r2 = rdtsc();
 //	printf("runtask: %lu cycles.\n", r2 - r1);
 
-	for(int i = 0; i < sizeof(test_arr) / sizeof(int); i++)
+	for(int i = 0; i < sizeof(test_arr) / sizeof(long); i++)
 	{
 		printf("%d\n", test_arr[i]);
 		if(i % 3 == 0)
@@ -1027,87 +1027,87 @@ long test_shmm(void)
 
 	if(pid != 0)
 	{
-		int status = 0;
-		struct ring_buf* rb;
-		struct shmm_blk* sb = shmm_create(101, 0, 256, 0);
-		if(!sb)
-		{
-			printf("main process exit with error: %d\n", errno);
-			exit(-1);
-		}
-
-		rslt = rbuf_new(sb->addr_begin, sb->addr_end - sb->addr_begin);
-		if(rslt < 0)
-		{
-			printf("new ringbuf failed\n");
-			exit(-1);
-		}
-
-		rb = rbuf_open(sb->addr_begin);
-		if(!rb)
-		{
-			printf("open ring buf failed\n");
-			exit(-1);
-		}
-
-		if(rbuf_write_block(rb, "1234567890", 10) < 0)
-		{
-			printf("write ringbuf failed\n");
-			exit(-1);
-		}
-
-		printf("main process wrote to ringbuf.\n");
-
-		wait(&status);
-
-		rbuf_del(&rb);
-		shmm_destroy(sb);
-
-		printf("main process exit with success.\n");
-		exit(0);
+//		int status = 0;
+//		struct ring_buf* rb;
+//		struct shmm_blk* sb = shmm_create(101, 0, 256, 0);
+//		if(!sb)
+//		{
+//			printf("main process exit with error: %d\n", errno);
+//			exit(-1);
+//		}
+//
+//		rslt = rbuf_new(sb->addr_begin, sb->addr_end - sb->addr_begin);
+//		if(rslt < 0)
+//		{
+//			printf("new ringbuf failed\n");
+//			exit(-1);
+//		}
+//
+//		rb = rbuf_open(sb->addr_begin);
+//		if(!rb)
+//		{
+//			printf("open ring buf failed\n");
+//			exit(-1);
+//		}
+//
+//		if(rbuf_write_block(rb, "1234567890", 10) < 0)
+//		{
+//			printf("write ringbuf failed\n");
+//			exit(-1);
+//		}
+//
+//		printf("main process wrote to ringbuf.\n");
+//
+//		wait(&status);
+//
+//		rbuf_del(&rb);
+//		shmm_destroy(sb);
+//
+//		printf("main process exit with success.\n");
+//		exit(0);
 	}
 	else
 	{
-		int sig;
-		sigset_t ss;
-		sigemptyset(&ss);
-		sigaddset(&ss, SIGINT);
-
-		printf("child process started with pid: %d.\n", getpid());
-
-		signal(SIGINT, shmm_sig_int);
-		sigwait(&ss, &sig);
-
-		char read_buf[2] = { 0 };
-		struct ring_buf* rb;
-		rslt = 0;
-		struct shmm_blk* sb = shmm_open(101, 0);
-		if(!sb)
-		{
-			printf("child process exit with error: %d\n", errno);
-			exit(-1);
-		}
-
-		rb = rbuf_open(sb->addr_begin);
-		if(!rb)
-		{
-			printf("open ring buf failed\n");
-			exit(-1);
-		}
-
-		while(rslt >= 0)
-		{
-			rslt = rbuf_read_block(rb, read_buf, 1);
-
-			if(rslt >= 0)
-				printf("read from ringbuf: %s\n", read_buf);
-		}
-
-		rbuf_close(&rb);
-		shmm_close(sb);
-
-		printf("child process exit with success.\n");
-		exit(0);
+//		int sig;
+//		sigset_t ss;
+//		sigemptyset(&ss);
+//		sigaddset(&ss, SIGINT);
+//
+//		printf("child process started with pid: %d.\n", getpid());
+//
+//		signal(SIGINT, shmm_sig_int);
+//		sigwait(&ss, &sig);
+//
+//		char read_buf[2] = { 0 };
+//		struct ring_buf* rb;
+//		rslt = 0;
+//		struct shmm_blk* sb = shmm_open(101, 0);
+//		if(!sb)
+//		{
+//			printf("child process exit with error: %d\n", errno);
+//			exit(-1);
+//		}
+//
+//		rb = rbuf_open(sb->addr_begin);
+//		if(!rb)
+//		{
+//			printf("open ring buf failed\n");
+//			exit(-1);
+//		}
+//
+//		while(rslt >= 0)
+//		{
+//			rslt = rbuf_read_block(rb, read_buf, 1);
+//
+//			if(rslt >= 0)
+//				printf("read from ringbuf: %s\n", read_buf);
+//		}
+//
+//		rbuf_close(&rb);
+//		shmm_close(sb);
+//
+//		printf("child process exit with success.\n");
+//		exit(0);
 	}
 
 	return 0;
@@ -1284,7 +1284,7 @@ void test_mm(void)
 	rslt = mm_initialize(&cfg);
 	if(rslt < 0) goto error_ret;
 
-	mmz = mm_zcreate(385);
+	mmz = mm_zcreate("test_mm", 385);
 	if(!mmz) goto error_ret;
 
 	p = mm_zalloc(mmz);

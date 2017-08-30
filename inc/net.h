@@ -1,12 +1,10 @@
 #ifndef __net_h__
 #define __net_h__
 
-#include "mmpool.h"
-
 struct acceptor 
 {
-	unsigned int l_ip;
-	unsigned int l_port;
+	unsigned int local_ip;
+	unsigned int local_port;
 };
 
 struct session
@@ -25,8 +23,8 @@ typedef long (*on_recv_func)(struct session* se, const void* buf, long len);
 
 struct net_io_cfg
 {
-	long send_buff_len;
-	long recv_buff_len;
+	unsigned long send_buff_len;
+	unsigned long recv_buff_len;
 };
 
 struct net_server_cfg
@@ -47,10 +45,11 @@ struct net_client_cfg
 	on_recv_func func_recv;
 };
 
-struct acceptor* acc_create(unsigned int ip, unsigned int port, const net_server_cfg* cfg);
-long acc_destroy(struct acceptor* acc);
+struct acceptor* net_acceptor_create(unsigned int ip, unsigned int port, const struct net_server_cfg* cfg);
+long net_acceptor_destroy(struct acceptor* acc);
+long net_acceptor_run(struct acceptor* acc);
 
-
+long net_send(struct session* se);
 
 #endif
 

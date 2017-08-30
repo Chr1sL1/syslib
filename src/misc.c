@@ -153,6 +153,10 @@ inline void* move_ptr_align64(void* ptr, unsigned long offset)
 	return (void*)(((unsigned long)(ptr + offset) + 63) & (~63));
 }
 
+inline void* move_ptr_align128(void* ptr, unsigned long offset)
+{
+	return (void*)(((unsigned long)(ptr + offset) + 127) & (~127));
+}
 
 
 

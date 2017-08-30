@@ -39,7 +39,20 @@ struct mm_ops
 	mm_ops_free free_func;
 };
 
+enum MM_SHM_TYPE
+{
+	MM_SHM_MEMORY_SPACE,
+	MM_SHM_IPC,
 
+	MM_SHM_COUNT,
+};
+
+static inline int mm_shm_create_key(int shm_type, int shm_key)
+{
+	if(shm_type >= MM_SHM_COUNT || shm_key > 0xFFFFFF) return 0;
+
+	return (shm_type << 24) + shm_key;
+}
 
 #endif
 

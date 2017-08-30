@@ -3,6 +3,7 @@
 #include "dlist.h"
 #include "rbtree.h"
 #include "misc.h"
+#include "mmops.h"
 
 #include <string.h>
 #include <stdlib.h>
@@ -14,6 +15,7 @@
 #define SLAB_LABEL (0x2222222222222222UL)
 #define CACHE_OBJ_COUNT (32)
 #define CACHE_OBJ_COUNT_MAX (64)
+#define ZONE_NAME_LEN (32)
 
 struct _mm_section_impl
 {
@@ -66,6 +68,7 @@ struct _mmzone_impl
 	struct dlist _partial_slab_list;
 
 	struct dlnode _list_node;
+	char _zone_name[ZONE_NAME_LEN];
 };
 
 static struct _mm_space_impl* __the_mmspace = 0;
@@ -269,7 +272,7 @@ error_ret:
 }
 
 
-struct mmzone* mm_zcreate(unsigned int obj_size)
+struct mmzone* mm_zcreate(const char* name, unsigned int obj_size)
 {
 	long rslt;
 	unsigned long cache_size;
@@ -380,7 +383,7 @@ error_ret:
 
 static inline int _make_shmm_key(struct _mm_space_impl* mm, long ar_type, long area_idx)
 {
-	return  (mm->_cfg.sys_shmm_key) << 16 + ((ar_type + 1) << 8) + area_idx;
+	return  (mm->_cfg.sys_shmm_key) << 16 + (ar_type << 8) + area_idx;
 }
 
 static inline struct shmm_blk* _conv_shmm_from_rbn(struct rbnode* rbn)
@@ -452,6 +455,7 @@ static long _mm_create_section(struct _mm_space_impl* mm, int ar_type)
 	if(mm->_total_shmm_count >= mm->_cfg.max_shmm_count) goto error_ret;
 
 	shmm_key = _make_shmm_key(mm, ar_type, ++mm->_next_shmm_key);
+	shmm_key = mm_shm_create_key(MM_SHM_MEMORY_SPACE, shmm_key);
 
 	shm = shmm_create(shmm_key, 0, mm->_cfg.mm_cfg[ar_type].total_size, mm->_cfg.try_huge_page);
 	if(!shm) goto error_ret;

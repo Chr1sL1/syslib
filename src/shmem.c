@@ -70,7 +70,9 @@ struct shmm_blk* shmm_create(int key, void* at_addr, unsigned long size, int try
 	}
 #endif
 
-	fd = shmget(key, size + sizeof(struct _shmm_blk_impl), flag);
+	size = round_up(size, SHM_PAGE_SIZE) + SHM_PAGE_SIZE;
+
+	fd = shmget(key, size, flag);
 	if(fd < 0)
 		goto error_ret;
 
@@ -80,8 +82,8 @@ struct shmm_blk* shmm_create(int key, void* at_addr, unsigned long size, int try
 
 	sbi = (struct _shmm_blk_impl*)ret_addr;
 	sbi->_shmm_tag = SHMM_TAG;
-	sbi->_the_blk.addr_begin = ret_addr + sizeof(struct _shmm_blk_impl);
-	sbi->_the_blk.addr_end = sbi->_the_blk.addr_begin + size;
+	sbi->_the_blk.addr_begin = ret_addr + round_up(sizeof(struct _shmm_blk_impl), 128);
+	sbi->_the_blk.addr_end = ret_addr + size;
 	sbi->_the_key = key;
 	sbi->_fd = fd;
 
@@ -133,7 +135,8 @@ struct shmm_blk* shmm_open_raw(int key, void* at_addr)
 		goto error_ret;
 
 	sbi = (struct _shmm_blk_impl*)ret_addr;
-	if(sbi->_shmm_tag != SHMM_TAG || sbi->_the_blk.addr_begin != ret_addr + sizeof(struct _shmm_blk_impl) || sbi->_the_key != key)
+	if(sbi->_shmm_tag != SHMM_TAG
+			|| sbi->_the_blk.addr_begin != ret_addr + round_up(sizeof(struct _shmm_blk_impl), 128)|| sbi->_the_key != key)
 		goto error_ret;
 
 	return &sbi->_the_blk;
@@ -154,7 +157,7 @@ long shmm_close(struct shmm_blk* shm)
 	if(!sbi->_the_blk.addr_begin || !sbi->_the_blk.addr_end)
 		goto error_ret;
 
-	addr_begin = sbi->_the_blk.addr_begin - sizeof(struct _shmm_blk_impl);
+	addr_begin = sbi->_the_blk.addr_begin - round_up(sizeof(struct _shmm_blk_impl), 128);
 
 	sbi = (struct _shmm_blk_impl*)(addr_begin);
 	if(sbi->_shmm_tag != SHMM_TAG)

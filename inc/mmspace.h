@@ -15,7 +15,7 @@ struct mmzone
 	unsigned int padding;
 };
 
-struct mmzone* mm_zcreate(unsigned int obj_size);
+struct mmzone* mm_zcreate(const char* name, unsigned int obj_size);
 long mm_zdestroy(struct mmzone* mmz);
 
 void* mm_zalloc(struct mmzone* mmz);
