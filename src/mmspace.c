@@ -4,6 +4,7 @@
 #include "rbtree.h"
 #include "misc.h"
 #include "mmops.h"
+#include "hash.h"
 
 #include <string.h>
 #include <stdlib.h>
@@ -16,6 +17,7 @@
 #define CACHE_OBJ_COUNT (32)
 #define CACHE_OBJ_COUNT_MAX (64)
 #define ZONE_NAME_LEN (32)
+#define ZONE_HASH_SIZE (64)
 
 struct _mm_section_impl
 {
@@ -54,6 +56,7 @@ struct _mm_space_impl
 	struct rbtree _all_section_tree;
 	struct dlist _zone_list;
 	struct _mm_shmm_save* _shmm_save_list;
+	struct hash_table _zone_hash;
 	void* _usr_globl;
 
 }__attribute__((aligned(8)));
@@ -68,7 +71,7 @@ struct _mmzone_impl
 	struct dlist _partial_slab_list;
 
 	struct dlnode _list_node;
-	char _zone_name[ZONE_NAME_LEN];
+	struct hash_node _hash_node;
 };
 
 static struct _mm_space_impl* __the_mmspace = 0;
@@ -112,6 +115,11 @@ static inline struct _mmzone_impl* _conv_zone_impl(struct mmzone* mmz)
 static inline struct _mmzone_impl* _conv_zone_lst_node(struct dlnode* dln)
 {
 	return (struct _mmzone_impl*)((unsigned long)dln- (unsigned long)&((struct _mmzone_impl*)(0))->_list_node);
+}
+
+static inline struct _mmzone_impl* _conv_zone_hash_node(struct hash_node* hn)
+{
+	return (struct _mmzone_impl*)((unsigned long)hn- (unsigned long)&((struct _mmzone_impl*)(0))->_hash_node);
 }
 
 static inline struct _mm_cache* _conv_cache(struct dlnode* dln)
@@ -297,7 +305,12 @@ struct mmzone* mm_zcreate(const char* name, unsigned int obj_size)
 	mzi->_the_zone.obj_size = obj_size;
 	mzi->_cache_size = cache_size;
 
+	strncpy(mzi->_hash_node.hash_key, name, HASH_KEY_LEN);
+
 	rslt = lst_push_back(&__the_mmspace->_zone_list, &mzi->_list_node);
+	if(rslt < 0) goto error_ret;
+
+	rslt = hash_insert(&__the_mmspace->_zone_hash, &mzi->_hash_node);
 	if(rslt < 0) goto error_ret;
 
 	return &mzi->_the_zone;
@@ -381,7 +394,7 @@ error_ret:
 // mmspace:
 //
 
-static inline int _make_shmm_key(struct _mm_space_impl* mm, long ar_type, long area_idx)
+static inline int _make_shmm_key(struct _mm_space_impl* mm, int ar_type, int area_idx)
 {
 	return  (mm->_cfg.sys_shmm_key) << 16 + (ar_type << 8) + area_idx;
 }
@@ -507,7 +520,7 @@ long mm_initialize(struct mm_space_config* cfg)
 
 	if(__the_mmspace || !cfg || cfg->max_shmm_count <= 0) goto error_ret;
 
-	shm_size = sizeof(struct _mm_space_impl) + sizeof(struct _mm_shmm_save) * cfg->max_shmm_count;
+	shm_size = sizeof(struct _mm_space_impl) + sizeof(struct _mm_shmm_save) * cfg->max_shmm_count + sizeof(struct dlist) * ZONE_HASH_SIZE;
 
 	shm = shmm_open_raw(cfg->sys_shmm_key, (void*)cfg->sys_begin_addr);
 	if(shm)
@@ -535,7 +548,9 @@ long mm_initialize(struct mm_space_config* cfg)
 
 	mm->_total_shmm_count = 0;
 	mm->_usr_globl = 0;
-	mm->_shmm_save_list = (struct _mm_shmm_save*)((void*)mm + sizeof(struct _mm_space_impl));
+	mm->_zone_hash.hash_list = (struct dlist*)((void*)mm + sizeof(struct _mm_space_impl));
+	mm->_zone_hash.bucket_size = ZONE_HASH_SIZE;
+	mm->_shmm_save_list = (struct _mm_shmm_save*)(&mm->_zone_hash.hash_list[ZONE_HASH_SIZE]);
 
 	for(int i = MM_AREA_BEGIN; i < MM_AREA_COUNT; ++i)
 	{
@@ -579,6 +594,21 @@ inline void* mm_load_globl_data(void)
 	if(!__the_mmspace) goto error_ret;
 
 	return __the_mmspace->_usr_globl;
+error_ret:
+	return 0;
+}
+
+struct mmzone* mm_search_zone(const char* zone_name)
+{
+	struct _mmzone_impl* mzi;
+	struct hash_node* hn;
+
+	hn = hash_search(&__the_mmspace->_zone_hash, zone_name);
+	if(!hn) goto error_ret;
+
+	mzi = _conv_zone_hash_node(hn);
+
+	return &mzi->_the_zone;
 error_ret:
 	return 0;
 }

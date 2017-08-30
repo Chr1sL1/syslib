@@ -1246,7 +1246,7 @@ void test_mm(void)
 	struct mm_space_config cfg;
 	struct mmzone* mmz;
 
-	cfg.sys_shmm_key = 104;
+	cfg.sys_shmm_key = 111;
 	cfg.try_huge_page = 0;
 	cfg.sys_begin_addr = 0x7ffff7fd2000;
 	cfg.max_shmm_count = 8;
@@ -1286,6 +1286,8 @@ void test_mm(void)
 
 	mmz = mm_zcreate("test_mm", 385);
 	if(!mmz) goto error_ret;
+
+	mmz = mm_search_zone("test_mm");
 
 	p = mm_zalloc(mmz);
 	if(!p) goto error_ret;

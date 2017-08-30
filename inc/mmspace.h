@@ -54,6 +54,8 @@ long mm_uninitialize(void);
 long mm_save_globl_data(void* p, unsigned int size);
 void* mm_load_globl_data(void);
 
+struct mmzone* mm_search_zone(const char* zone_name);
+
 void* mm_alloc(unsigned long size);
 void* mm_area_alloc(unsigned long size, int area_type);
 
