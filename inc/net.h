@@ -48,7 +48,6 @@ struct net_client_cfg
 struct acceptor* net_acceptor_create(unsigned int ip, unsigned int port, const struct net_server_cfg* cfg);
 long net_acceptor_destroy(struct acceptor* acc);
 long net_acceptor_run(struct acceptor* acc);
-
 long net_send(struct session* se);
 
 #endif

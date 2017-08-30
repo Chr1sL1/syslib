@@ -1246,7 +1246,7 @@ void test_mm(void)
 	struct mm_space_config cfg;
 	struct mmzone* mmz;
 
-	cfg.sys_shmm_key = 111;
+	cfg.sys_shmm_key = 103;
 	cfg.try_huge_page = 0;
 	cfg.sys_begin_addr = 0x7ffff7fd2000;
 	cfg.max_shmm_count = 8;

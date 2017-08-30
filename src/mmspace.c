@@ -285,7 +285,11 @@ struct mmzone* mm_zcreate(const char* name, unsigned int obj_size)
 	long rslt;
 	unsigned long cache_size;
 	struct _mmzone_impl* mzi;
+	struct hash_node* hn;
 	if(!__the_mmspace) goto error_ret;
+
+	hn = hash_search(&__the_mmspace->_zone_hash, name);
+	if(hn) goto error_ret;
 
 	obj_size = round_up(obj_size, 8);
 
@@ -396,7 +400,7 @@ error_ret:
 
 static inline int _make_shmm_key(struct _mm_space_impl* mm, int ar_type, int area_idx)
 {
-	return  (mm->_cfg.sys_shmm_key) << 16 + (ar_type << 8) + area_idx;
+	return  ((mm->_cfg.sys_shmm_key) << 16) + (ar_type << 8) + area_idx;
 }
 
 static inline struct shmm_blk* _conv_shmm_from_rbn(struct rbnode* rbn)
@@ -550,6 +554,12 @@ long mm_initialize(struct mm_space_config* cfg)
 	mm->_usr_globl = 0;
 	mm->_zone_hash.hash_list = (struct dlist*)((void*)mm + sizeof(struct _mm_space_impl));
 	mm->_zone_hash.bucket_size = ZONE_HASH_SIZE;
+
+	for(int i = 0; i < ZONE_HASH_SIZE; ++i)
+	{
+		lst_new(&mm->_zone_hash.hash_list[i]);
+	}
+
 	mm->_shmm_save_list = (struct _mm_shmm_save*)(&mm->_zone_hash.hash_list[ZONE_HASH_SIZE]);
 
 	for(int i = MM_AREA_BEGIN; i < MM_AREA_COUNT; ++i)
