@@ -17,6 +17,7 @@
 #include "ringbuf.h"
 #include "ipc.h"
 #include "mmspace.h"
+#include "net.h"
 #include <signal.h>
 #include <unistd.h>
 #include <string.h>
@@ -1358,17 +1359,91 @@ error_ret:
 	return;
 }
 
+long init_mm(int key)
+{
+	long rslt;
+	struct mm_space_config cfg;
+
+	cfg.sys_shmm_key = key;
+	cfg.try_huge_page = 0;
+	cfg.sys_begin_addr = 0x7ffff7fd2000;
+	cfg.max_shmm_count = 8;
+
+
+	cfg.mm_cfg[MM_AREA_NUBBLE] = (struct mm_config)
+	{
+		.total_size = 20 * 1024 * 1024,
+		.min_order = 5,
+		.max_order = 11,
+	};
+
+	cfg.mm_cfg[MM_AREA_PAGE] = (struct mm_config)
+	{
+		.total_size = 20 * 1024 * 1024,
+		.page_size = 0x1000,
+		.maxpg_count = 10,
+	};
+
+	cfg.mm_cfg[MM_AREA_ZONE] = (struct mm_config)
+	{
+		.total_size = 20 * 1024 * 1024,
+		.page_size = 0x1000,
+		.maxpg_count = 10,
+	};
+
+	cfg.mm_cfg[MM_AREA_PERSIS] = (struct mm_config)
+	{
+		.total_size = 200 * 1024 * 1024,
+		.min_order = 5,
+		.max_order = 11,
+	};
+
+	rslt = mm_initialize(&cfg);
+	if(rslt < 0) goto error_ret;
+
+	return 0;
+error_ret:
+	perror(strerror(errno));
+	return -1;
+}
+
+long test_server(void)
+{
+	struct net_server_cfg cfg;
+	cfg.max_conn_count = 10;
+
+	struct acceptor* acc = net_create(0, 7070, &cfg);
+	if(!acc) goto error_ret;
+
+
+	net_destroy(acc);
+
+	return 0;
+error_ret:
+	if(acc)
+		net_destroy(acc);
+
+	perror(strerror(errno));
+	return -1;
+}
+
 
 #define dbg(format, ...) printf(format, __VA_ARGS__)
 
 int main(void)
 {
+	long rslt;
 //	unsigned long i = test_asm_align8(10);
 //	printf("%lu\n", i);
 //
 //	unsigned long seed = 0;//time(0);
 	unsigned long seed = time(0);
 	srandom(seed);
+
+	rslt = init_mm(10);
+	if(rslt < 0) goto error_ret;
+
+	test_server();
 
 //	test_shmm();
 
@@ -1396,7 +1471,7 @@ int main(void)
 //	test_mmp(100 * 1024, 6, 10, 64);
 //
 
-	test_mm();
+//	test_mm();
 //	unsigned long r1 = rdtsc();
 //	unsigned int aaa = align_to_2power_top(11);
 //	unsigned long r2 = rdtsc();

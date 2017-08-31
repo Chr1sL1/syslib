@@ -28,16 +28,10 @@ error_ret:
 	return -1;
 }
 
-struct hash_node* hash_search(struct hash_table* ht, const char* key)
+struct hash_node* _hash_search(struct hash_table* ht, unsigned hash_value, const char* key)
 {
 	struct dlnode* dln;
 	struct hash_node* hn = 0;
-	unsigned long hash_value;
-
-	if(!ht || !key) goto error_ret;
-	if(ht->bucket_size == 0) goto error_ret;
-
-	hash_value = _hash_value(key, ht->bucket_size);
 
 	dln = ht->hash_list[hash_value].head.next;
 
@@ -55,3 +49,40 @@ struct hash_node* hash_search(struct hash_table* ht, const char* key)
 error_ret:
 	return 0;
 }
+
+struct hash_node* hash_search(struct hash_table* ht, const char* key)
+{
+	struct dlnode* dln;
+	struct hash_node* hn = 0;
+	unsigned long hash_value;
+
+	if(!ht || !key) goto error_ret;
+	if(ht->bucket_size == 0) goto error_ret;
+
+	hash_value = _hash_value(key, ht->bucket_size);
+
+	return _hash_search(ht, hash_value, key);
+error_ret:
+	return 0;
+}
+
+
+long hash_remove(struct hash_table* ht, const char* key)
+{
+	struct dlnode* dln;
+	struct hash_node* hn = 0;
+	unsigned long hash_value;
+
+	if(!ht || !key) goto error_ret;
+	if(ht->bucket_size == 0) goto error_ret;
+
+	hash_value = _hash_value(key, ht->bucket_size);
+
+	hn = _hash_search(ht, hash_value, key);
+	if(!hn) goto error_ret;
+
+	return lst_remove(&ht->hash_list[hash_value], &hn->list_node);
+error_ret:
+	return -1;
+}
+

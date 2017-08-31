@@ -11,8 +11,7 @@ struct session
 {
 	unsigned int remote_ip;
 	unsigned int remote_port;
-	unsigned int local_ip;
-	unsigned int local_port;
+	void* usr_ptr;
 };
 
 // return 0 if succeed, return -1 if any error occurs.
@@ -30,11 +29,11 @@ struct net_io_cfg
 struct net_server_cfg
 {
 	struct net_io_cfg io_cfg;
+	unsigned long max_conn_count;
+
 	on_acc_func func_acc;
 	on_recv_func func_recv;
 	on_disconn_func func_disconn;
-
-	struct mmpool* session_pool;
 };
 
 struct net_client_cfg
@@ -45,10 +44,16 @@ struct net_client_cfg
 	on_recv_func func_recv;
 };
 
-struct acceptor* net_acceptor_create(unsigned int ip, unsigned int port, const struct net_server_cfg* cfg);
-long net_acceptor_destroy(struct acceptor* acc);
-long net_acceptor_run(struct acceptor* acc);
+struct acceptor* net_create(unsigned int ip, unsigned short port, const struct net_server_cfg* cfg);
+long net_destroy(struct acceptor* acc);
+long net_run(struct acceptor* acc);
+
+struct session* net_connect(unsigned int ip, unsigned short port, const struct net_client_cfg* cfg);
 long net_send(struct session* se);
+long net_disconnect(struct session* se);
+
+long net_set_recv_buf(struct session* se, char* buf, int size);
+long net_set_send_buf(struct session* se, char* buf, int size);
 
 #endif
 

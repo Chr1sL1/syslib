@@ -20,6 +20,7 @@ struct hash_table
 
 long hash_insert(struct hash_table* ht, struct hash_node* hn);
 struct hash_node* hash_search(struct hash_table* ht, const char* key);
+long hash_remove(struct hash_table* ht, const char* key);
 
 #endif
 

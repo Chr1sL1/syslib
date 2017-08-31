@@ -524,6 +524,10 @@ long mm_initialize(struct mm_space_config* cfg)
 
 	if(__the_mmspace || !cfg || cfg->max_shmm_count <= 0) goto error_ret;
 
+	/* low mem                                                        high mem
+	 *   || struct _mm_space_impl || _zone_hash_list | _shmm_save_list |
+	 */
+
 	shm_size = sizeof(struct _mm_space_impl) + sizeof(struct _mm_shmm_save) * cfg->max_shmm_count + sizeof(struct dlist) * ZONE_HASH_SIZE;
 
 	shm = shmm_open_raw(cfg->sys_shmm_key, (void*)cfg->sys_begin_addr);
@@ -559,6 +563,7 @@ long mm_initialize(struct mm_space_config* cfg)
 	{
 		lst_new(&mm->_zone_hash.hash_list[i]);
 	}
+
 
 	mm->_shmm_save_list = (struct _mm_shmm_save*)(&mm->_zone_hash.hash_list[ZONE_HASH_SIZE]);
 
