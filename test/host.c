@@ -1417,11 +1417,29 @@ error_ret:
 
 static long _test_server_on_recv(struct session* se, const void* buf, long len)
 {
-	printf("recvd: %s, len: %ld\n", buf, len);
+	const char* echo = "helloooooooooooooooooooooooooooooo world!!!\n";
+	if(len < 2)
+	{
+		net_send(se, echo, strlen(echo) + 1);
+		net_disconnect(se);
+	}
+	else
+	{
+		printf("recvd: %s, len: %ld\n", (char*)buf, len);
+		net_send(se, echo, strlen(echo) + 1);
+	}
+
 
 	return 0;
 error_ret:
 	return -1;
+}
+
+static long _test_server_on_disconn(struct session* se)
+{
+	printf("disconnected.\n");
+
+	return 0;
 }
 
 
@@ -1430,10 +1448,13 @@ long test_server(void)
 	long rslt = 0;
 	struct net_server_cfg cfg;
 	cfg.max_conn_count = 10;
+
 	cfg.func_acc = _test_server_on_acc;
 	cfg.func_recv = _test_server_on_recv;
-	cfg.io_cfg.recv_buff_len = 100;
-	cfg.io_cfg.send_buff_len = 100;
+	cfg.func_disconn = _test_server_on_disconn;
+
+	cfg.io_cfg.recv_buff_len = 10;
+	cfg.io_cfg.send_buff_len = 10;
 
 	struct acceptor* acc = net_create(0, 7070, &cfg);
 	if(!acc) goto error_ret;
@@ -1443,7 +1464,6 @@ long test_server(void)
 		rslt = net_run(acc);
 		if(rslt < 0)
 			 goto error_ret;
-
 	}
 
 
@@ -1471,7 +1491,7 @@ int main(void)
 	unsigned long seed = time(0);
 	srandom(seed);
 
-	rslt = init_mm(13);
+	rslt = init_mm(14);
 	if(rslt < 0) goto error_ret;
 
 	test_server();

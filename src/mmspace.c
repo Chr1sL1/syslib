@@ -272,6 +272,8 @@ static struct _mm_cache* _mm_zcache_new(struct _mmzone_impl* mzi)
 	mc->_alloc_bits = 0;
 	mc->_free_count = mc->_obj_count;
 
+	_mm_zmove_cache(mc, 0, &mzi->_empty_slab_list);
+
 	return mc;
 error_ret:
 	if(mc)
@@ -354,12 +356,12 @@ void* mm_zalloc(struct mmzone* mmz)
 		{
 			mc = _mm_zcache_new(mzi);
 			if(!mc) goto error_ret;
-
-			p = _mm_zfetch_obj(mc);
-			if(!p) goto error_ret;
-
-			_mm_zmove_cache(mc, 0, &mzi->_partial_slab_list);
 		}
+
+		p = _mm_zfetch_obj(mc);
+		if(!p) goto error_ret;
+
+		_mm_zmove_cache(mc, &mzi->_empty_slab_list, &mzi->_partial_slab_list);
 	}
 
 	return p;

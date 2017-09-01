@@ -343,7 +343,7 @@ static long _net_close(struct _ses_impl* sei)
 static void _net_on_recv(struct _acc_impl* aci, struct _ses_impl* sei)
 {
 	long rslt;
-	int recv_len = 1;
+	int recv_len = 0;
 
 	char* p = sei->_recv_buf;
 	sei->_bytes_recv = 0;
@@ -351,7 +351,7 @@ static void _net_on_recv(struct _acc_impl* aci, struct _ses_impl* sei)
 	if(!sei->_recv_buf || sei->_recv_buf_len <= 0 || sei->_state != _SES_NORMAL)
 		goto error_ret;
 
-	while(recv_len > 0)
+	do
 	{
 		recv_len = recv(sei->_sock_fd, p, sei->_recv_buf_len - sei->_bytes_recv, MSG_DONTWAIT);
 		if(recv_len <= 0) break;
@@ -368,19 +368,17 @@ static void _net_on_recv(struct _acc_impl* aci, struct _ses_impl* sei)
 			sei->_bytes_recv = 0;
 		}
 	}
+	while(recv_len > 0);
 
 	if(recv_len < 0)
 	{
 		if(errno != EWOULDBLOCK && errno != EAGAIN)
 			goto error_ret;
-	}
-	else
-	{
-		if(recv_len == 0)
-			_net_disconn(sei);
 		else if(aci->_cfg.func_recv)
 			(*aci->_cfg.func_recv)(&sei->_the_ses, sei->_recv_buf, sei->_bytes_recv);
 	}
+	else if(recv_len == 0)
+		_net_disconn(sei);
 
 	return;
 error_ret:
@@ -415,13 +413,13 @@ static long _net_try_send_all(struct _ses_impl* sei)
 		}
 
 		rmv_dln = dln;
+		dln = dln->next;
 
 		lst_remove(&sei->_send_list, rmv_dln);
 
 		mm_free(sdn->_data);
 		mm_zfree(__the_send_data_zone, sdn);
 
-		dln = dln->next;
 	}
 
 	if(sei->_state == _SES_CLOSING)
@@ -479,7 +477,7 @@ long net_send(struct session* ses, const char* data, int data_len)
 	memcpy(sdn->_data, data, data_len);
 
 	rslt = lst_push_back(&sei->_send_list, &sdn->_lst_node);
-	if(!rslt) goto error_ret;
+	if(rslt < 0) goto error_ret;
 
 	_net_try_send_all(sei);
 
@@ -496,8 +494,13 @@ error_ret:
 
 static inline long _net_disconn(struct _ses_impl* sei)
 {
+	struct _acc_impl* aci = sei->_aci;
+
 	if(sei->_state != _SES_NORMAL)
 		goto error_ret;
+
+	if(aci->_cfg.func_disconn)
+		(*aci->_cfg.func_disconn)(&sei->_the_ses);
 
 	shutdown(sei->_sock_fd, SHUT_RD);
 
