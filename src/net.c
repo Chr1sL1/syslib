@@ -116,7 +116,7 @@ static inline long _net_try_restore_zones(void)
 		}
 		else
 		{
-			if(!__the_acc_zone->obj_size != sizeof(struct _acc_impl))
+			if(__the_acc_zone->obj_size != sizeof(struct _acc_impl))
 				goto error_ret;
 		}
 	}
@@ -131,7 +131,7 @@ static inline long _net_try_restore_zones(void)
 		}
 		else
 		{
-			if(!__the_ses_zone->obj_size != sizeof(struct _ses_impl))
+			if(__the_ses_zone->obj_size != sizeof(struct _ses_impl))
 				goto error_ret;
 		}
 	}
@@ -146,7 +146,7 @@ static inline long _net_try_restore_zones(void)
 		}
 		else
 		{
-			if(!__the_send_data_zone->obj_size != sizeof(struct _send_data_node))
+			if(__the_send_data_zone->obj_size != sizeof(struct _send_data_node))
 				goto error_ret;
 		}
 	}
@@ -197,7 +197,7 @@ struct acceptor* net_create(unsigned int ip, unsigned short port, const struct n
 	rslt = listen(aci->_sock_fd, NET_BACKLOG_COUNT);
 	if(rslt < 0) goto error_ret;
 
-	aci->_epoll_fd = epoll_create(aci->_cfg.max_conn_count);
+	aci->_epoll_fd = epoll_create(cfg->max_conn_count);
 	if(aci->_epoll_fd < 0) goto error_ret;
 
 	ev.events = EPOLLIN;
@@ -246,18 +246,16 @@ static long _net_on_acc(struct _acc_impl* aci)
 {
 	long rslt;
 	int new_sock, sock_opt;
-	socklen_t addr_len;
+	socklen_t addr_len = 0;
 	struct sockaddr_in remote_addr;
-	struct _ses_impl* sei;
+	struct _ses_impl* sei = 0;
 	struct epoll_event ev;
 
-	new_sock = accept4(aci->_sock_fd, (struct sockaddr*)&remote_addr, &addr_len, SOCK_NONBLOCK);
+	new_sock = accept4(aci->_sock_fd, (struct sockaddr*)&remote_addr, &addr_len, 0);
 	if(new_sock < 0) goto error_ret;
 
 	sock_opt = 1;
 	rslt = setsockopt(aci->_sock_fd, SOL_SOCKET, SO_KEEPALIVE, &sock_opt, sizeof(int));
-	rslt = setsockopt(aci->_sock_fd, SOL_SOCKET, TCP_NODELAY, &sock_opt, sizeof(int));
-
 	rslt = setsockopt(aci->_sock_fd, SOL_SOCKET, SO_RCVBUF, &aci->_cfg.io_cfg.recv_buff_len, sizeof(int));
 	rslt = setsockopt(aci->_sock_fd, SOL_SOCKET, SO_SNDBUF, &aci->_cfg.io_cfg.send_buff_len, sizeof(int));
 
@@ -271,6 +269,9 @@ static long _net_on_acc(struct _acc_impl* aci)
 
 	sei->_sock_fd = new_sock;
 	sei->_aci = aci;
+
+	sei->_the_ses.remote_ip = ntohl(*(unsigned int*)&remote_addr.sin_addr);
+	sei->_the_ses.remote_port = ntohs(remote_addr.sin_port);
 
 	sei->_recv_buf = 0;
 	sei->_send_buf = 0;
@@ -290,13 +291,14 @@ static long _net_on_acc(struct _acc_impl* aci)
 	rslt = epoll_ctl(aci->_epoll_fd, EPOLL_CTL_ADD, new_sock, &ev);
 	if(rslt < 0) goto error_ret;
 
+	sei->_state = _SES_NORMAL;
+
 	if(aci->_cfg.func_acc)
 		(*aci->_cfg.func_acc)(&aci->_the_acc, &sei->_the_ses);
 
-	sei->_state = _SES_NORMAL;
-
 	return 0;
 error_ret:
+	perror(strerror(errno));
 	if(sei)
 	{
 		if(sei->_recv_buf)
@@ -341,7 +343,7 @@ static long _net_close(struct _ses_impl* sei)
 static void _net_on_recv(struct _acc_impl* aci, struct _ses_impl* sei)
 {
 	long rslt;
-	int recv_len = 0;
+	int recv_len = 1;
 
 	char* p = sei->_recv_buf;
 	sei->_bytes_recv = 0;
