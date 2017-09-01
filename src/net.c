@@ -10,6 +10,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <sys/epoll.h>
 #include <stdlib.h>
 #include <string.h>
@@ -18,9 +19,18 @@
 
 #define NET_ACC_ZONE_NAME "net_acc_zone"
 #define NET_SES_ZONE_NAME "net_ses_zone"
+#define NET_SEND_DATA_ZONE_NAME "net_send_data_zone"
 
 #define NET_BACKLOG_COUNT 1024
 #define MSG_SIZE_LEN (2)
+
+enum _SESSION_STATE
+{
+	_SES_INVALID,
+	_SES_NORMAL,
+	_SES_CLOSING,
+	_SES_CLOSED,
+};
 
 struct _acc_impl
 {
@@ -38,21 +48,41 @@ struct _ses_impl
 	struct session _the_ses;
 	struct dlnode _lst_node;
 	struct _acc_impl* _aci;
+	struct dlist _send_list;
 
 	char* _recv_buf;
 	char* _send_buf;
 
-	int _bytes_recv;
-	int _recv_buf_len;
+	unsigned int _bytes_recv;
+	unsigned int _recv_buf_len;
 
-	int _bytes_sent;
-	int _send_buf_len;
+	unsigned int _sent_remain;
+	unsigned int _send_buf_len;
 
 	int _sock_fd;
+	int _state;
+};
+
+struct _send_data_node
+{
+	struct dlnode _lst_node;
+	void* _data;
+	int _data_size;
+	int _data_sent;
 };
 
 static struct mmzone* __the_acc_zone = 0;
 static struct mmzone* __the_ses_zone = 0;
+static struct mmzone* __the_send_data_zone = 0;
+
+static long _net_on_acc(struct _acc_impl* aci);
+static long _net_close(struct _ses_impl* sei);
+static void _net_on_recv(struct _acc_impl* aci, struct _ses_impl* sei);
+
+static void _net_on_error(struct _acc_impl* aci, struct _ses_impl* sei);
+static long _net_try_send_all(struct _ses_impl* sei);
+static void _net_on_send(struct _acc_impl* aci, struct _ses_impl* sei);
+static long _net_disconn(struct _ses_impl* sei);
 
 static inline struct _acc_impl* _conv_acc_impl(struct acceptor* acc)
 {
@@ -67,6 +97,11 @@ static inline struct _ses_impl* _conv_ses_impl(struct session* ses)
 static inline struct _ses_impl* _conv_ses_dln(struct dlnode* dln)
 {
 	return (struct _ses_impl*)((unsigned long)dln - (unsigned long)&((struct _ses_impl*)(0))->_lst_node);
+}
+
+static inline struct _send_data_node* _conv_send_data_dln(struct dlnode* dln)
+{
+	return (struct _send_data_node*)((unsigned long)dln - (unsigned long)&((struct _send_data_node*)(0))->_lst_node);
 }
 
 static inline long _net_try_restore_zones(void)
@@ -101,6 +136,21 @@ static inline long _net_try_restore_zones(void)
 		}
 	}
 
+	if(!__the_send_data_zone)
+	{
+		__the_send_data_zone = mm_search_zone(NET_SEND_DATA_ZONE_NAME);
+		if(!__the_send_data_zone)
+		{
+			__the_send_data_zone = mm_zcreate(NET_SEND_DATA_ZONE_NAME, sizeof(struct _send_data_node));
+			if(!__the_send_data_zone) goto error_ret;
+		}
+		else
+		{
+			if(!__the_send_data_zone->obj_size != sizeof(struct _send_data_node))
+				goto error_ret;
+		}
+	}
+
 	return 0;
 error_ret:
 	return -1;
@@ -109,6 +159,7 @@ error_ret:
 struct acceptor* net_create(unsigned int ip, unsigned short port, const struct net_server_cfg* cfg)
 {
 	long rslt;
+	int sock_opt;
 	struct _acc_impl* aci;
 	struct sockaddr_in addr;
 	struct epoll_event ev;
@@ -126,6 +177,11 @@ struct acceptor* net_create(unsigned int ip, unsigned short port, const struct n
 
 	aci->_sock_fd = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, IPPROTO_TCP);
 	if(aci->_sock_fd < 0) goto error_ret;
+
+	sock_opt = 1;
+	rslt = setsockopt(aci->_sock_fd, SOL_SOCKET, SO_REUSEADDR, &sock_opt, sizeof(int));
+	rslt = setsockopt(aci->_sock_fd, SOL_SOCKET, SO_RCVBUF, &cfg->io_cfg.recv_buff_len, sizeof(int));
+	rslt = setsockopt(aci->_sock_fd, SOL_SOCKET, SO_SNDBUF, &cfg->io_cfg.send_buff_len, sizeof(int));
 
 	ip = htonl(ip);
 
@@ -186,41 +242,10 @@ error_ret:
 	return -1;
 }
 
-inline long net_set_recv_buf(struct session* se, char* buf, int size)
-{
-	if(!se) goto error_ret;
-
-	struct _ses_impl* sei = _conv_ses_impl(se);
-
-	sei->_recv_buf = buf;
-	sei->_recv_buf_len = size;
-	sei->_bytes_recv = 0;
-
-	return 0;
-error_ret:
-	return -1;
-}
-
-inline long net_set_send_buf(struct session* se, char* buf, int size)
-{
-	if(!se) goto error_ret;
-
-	struct _ses_impl* sei = _conv_ses_impl(se);
-
-	sei->_send_buf = buf;
-	sei->_send_buf_len = size;
-	sei->_bytes_sent = 0;
-
-	return 0;
-error_ret:
-	return -1;
-
-}
-
 static long _net_on_acc(struct _acc_impl* aci)
 {
 	long rslt;
-	int new_sock;
+	int new_sock, sock_opt;
 	socklen_t addr_len;
 	struct sockaddr_in remote_addr;
 	struct _ses_impl* sei;
@@ -229,10 +254,20 @@ static long _net_on_acc(struct _acc_impl* aci)
 	new_sock = accept4(aci->_sock_fd, (struct sockaddr*)&remote_addr, &addr_len, SOCK_NONBLOCK);
 	if(new_sock < 0) goto error_ret;
 
+	sock_opt = 1;
+	rslt = setsockopt(aci->_sock_fd, SOL_SOCKET, SO_KEEPALIVE, &sock_opt, sizeof(int));
+	rslt = setsockopt(aci->_sock_fd, SOL_SOCKET, TCP_NODELAY, &sock_opt, sizeof(int));
+
+	rslt = setsockopt(aci->_sock_fd, SOL_SOCKET, SO_RCVBUF, &aci->_cfg.io_cfg.recv_buff_len, sizeof(int));
+	rslt = setsockopt(aci->_sock_fd, SOL_SOCKET, SO_SNDBUF, &aci->_cfg.io_cfg.send_buff_len, sizeof(int));
+
 	sei = mm_zalloc(__the_ses_zone);
 	if(!sei) goto error_ret;
 
+	sei->_state = _SES_INVALID;
+
 	lst_clr(&sei->_lst_node);
+	lst_new(&sei->_send_list);
 
 	sei->_sock_fd = new_sock;
 	sei->_aci = aci;
@@ -240,11 +275,14 @@ static long _net_on_acc(struct _acc_impl* aci)
 	sei->_recv_buf = 0;
 	sei->_send_buf = 0;
 
-	sei->_bytes_recv = 0;
-	sei->_recv_buf_len = 0 ;
+	sei->_recv_buf_len = aci->_cfg.io_cfg.recv_buff_len;
+	sei->_send_buf_len = aci->_cfg.io_cfg.send_buff_len;
 
-	sei->_bytes_sent = 0;
-	sei->_send_buf_len = 0;
+	sei->_recv_buf = mm_alloc(sei->_recv_buf_len);
+	if(!sei->_recv_buf) goto error_ret;
+
+	sei->_send_buf = mm_alloc(sei->_send_buf_len);
+	if(!sei->_send_buf) goto error_ret;
 
 	ev.events = EPOLLIN | EPOLLOUT | EPOLLET | EPOLLRDHUP;
 	ev.data.ptr = sei;
@@ -255,65 +293,229 @@ static long _net_on_acc(struct _acc_impl* aci)
 	if(aci->_cfg.func_acc)
 		(*aci->_cfg.func_acc)(&aci->_the_acc, &sei->_the_ses);
 
+	sei->_state = _SES_NORMAL;
+
 	return 0;
 error_ret:
-	if(sei->_sock_fd)
-		close(sei->_sock_fd);
 	if(sei)
-		mm_zfree(__the_ses_zone, sei);
+	{
+		if(sei->_recv_buf)
+			mm_free(sei->_recv_buf);
+		if(sei->_send_buf)
+			mm_free(sei->_send_buf);
+		if(sei->_sock_fd)
+			close(sei->_sock_fd);
+			mm_zfree(__the_ses_zone, sei);
+	}
 	return -1;
 }
 
-static long _net_on_recv(struct _acc_impl* aci, struct _ses_impl* sei)
+static long _net_close(struct _ses_impl* sei)
 {
-	long rslt;
-	int recv_len = 0;
-	char* p = sei->_recv_buf;
-	int remain_size = sei->_recv_buf_len;
+	struct dlnode* dln;
 
-	if(!sei->_recv_buf || sei->_recv_buf_len <= 0) goto error_ret;
+	close(sei->_sock_fd);
 
-	while(recv_len > 0)
+	if(sei->_recv_buf)
+		mm_free(sei->_recv_buf);
+
+	if(!lst_empty(&sei->_send_list))
 	{
-		recv_len = recv(sei->_sock_fd, p, remain_size, MSG_DONTWAIT);
-		if(recv_len <= 0) break;
+		dln = sei->_send_list.head.next;
 
-		p += recv_len;
-		remain_size -= recv_len;
-
-		if(remain_size <= 0)
+		while(dln != &sei->_send_list.tail)
 		{
-			if(aci->_cfg.func_recv)
-				(*aci->_cfg.func_recv)(&sei->_the_ses, sei->_recv_buf, sei->_recv_buf_len);
+			struct _send_data_node* sdn = _conv_send_data_dln(dln);
+			dln = dln->next;
 
-			p = sei->_recv_buf;
-			remain_size = sei->_recv_buf_len;
+			mm_free(sdn->_data);
+			mm_zfree(__the_send_data_zone, sdn);
 		}
 	}
 
-	if(errno != EWOULDBLOCK && errno != EAGAIN)
+	sei->_state = _SES_CLOSED;
+
+	return mm_zfree(__the_ses_zone, sei);
+}
+
+static void _net_on_recv(struct _acc_impl* aci, struct _ses_impl* sei)
+{
+	long rslt;
+	int recv_len = 0;
+
+	char* p = sei->_recv_buf;
+	sei->_bytes_recv = 0;
+
+	if(!sei->_recv_buf || sei->_recv_buf_len <= 0 || sei->_state != _SES_NORMAL)
 		goto error_ret;
-	else if(aci->_cfg.func_recv)
-		(*aci->_cfg.func_recv)(&sei->_the_ses, sei->_recv_buf, sei->_recv_buf_len - remain_size);
 
+	while(recv_len > 0)
+	{
+		recv_len = recv(sei->_sock_fd, p, sei->_recv_buf_len - sei->_bytes_recv, MSG_DONTWAIT);
+		if(recv_len <= 0) break;
+
+		p += recv_len;
+		sei->_bytes_recv += recv_len;
+
+		if(sei->_bytes_recv >= sei->_recv_buf_len)
+		{
+			if(aci->_cfg.func_recv)
+				(*aci->_cfg.func_recv)(&sei->_the_ses, sei->_recv_buf, sei->_bytes_recv);
+
+			p = sei->_recv_buf;
+			sei->_bytes_recv = 0;
+		}
+	}
+
+	if(recv_len < 0)
+	{
+		if(errno != EWOULDBLOCK && errno != EAGAIN)
+			goto error_ret;
+	}
+	else
+	{
+		if(recv_len == 0)
+			_net_disconn(sei);
+		else if(aci->_cfg.func_recv)
+			(*aci->_cfg.func_recv)(&sei->_the_ses, sei->_recv_buf, sei->_bytes_recv);
+	}
+
+	return;
+error_ret:
+	_net_close(sei);
+	return;
+}
+
+static inline void _net_on_error(struct _acc_impl* aci, struct _ses_impl* sei)
+{
+	_net_close(sei);
+}
+
+
+static long _net_try_send_all(struct _ses_impl* sei)
+{
+	int cnt = 0;
+	struct dlnode* dln;
+	struct dlnode* rmv_dln;
+
+	dln = sei->_send_list.head.next;
+
+	while(dln != &sei->_send_list.tail)
+	{
+		struct _send_data_node* sdn = _conv_send_data_dln(dln);
+
+		while(sdn->_data_size > sdn->_data_sent)
+		{
+			cnt = send(sei->_sock_fd, sdn->_data + sdn->_data_sent, sdn->_data_size - sdn->_data_sent, MSG_DONTWAIT);
+			if(cnt <= 0) goto send_finish;
+
+			sdn->_data_sent += cnt;
+		}
+
+		rmv_dln = dln;
+
+		lst_remove(&sei->_send_list, rmv_dln);
+
+		mm_free(sdn->_data);
+		mm_zfree(__the_send_data_zone, sdn);
+
+		dln = dln->next;
+	}
+
+	if(sei->_state == _SES_CLOSING)
+	{
+		if(lst_empty(&sei->_send_list))
+			_net_close(sei);
+	}
+	else
+	{
+send_finish:
+		if(cnt < 0)
+		{
+			if(errno != EWOULDBLOCK && errno != EAGAIN)
+				goto error_ret;
+		}
+	}
+
+send_succ:
 	return 0;
 error_ret:
-	net_disconnect(&sei->_the_ses);
+	_net_close(sei);
 	return -1;
 }
 
-static long _net_on_send(struct _acc_impl* aci, struct _ses_impl* sei)
+static inline void _net_on_send(struct _acc_impl* aci, struct _ses_impl* sei)
 {
+	_net_try_send_all(sei);
+}
+
+long net_send(struct session* ses, const char* data, int data_len)
+{
+	long rslt;
+	struct _ses_impl* sei;
+	struct _send_data_node* sdn = 0;
+
+	if(!ses) goto error_ret;
+
+	sei = _conv_ses_impl(ses);
+
+	if(sei->_state != _SES_NORMAL)
+		goto error_ret;
+
+	sdn = mm_zalloc(__the_send_data_zone);
+	if(!sdn) goto error_ret;
+
+	lst_clr(&sdn->_lst_node);
+
+	sdn->_data_size = data_len;
+
+	sdn->_data = mm_alloc(data_len);
+	if(!sdn->_data) goto error_ret;
+
+	sdn->_data_sent = 0;
+
+	memcpy(sdn->_data, data, data_len);
+
+	rslt = lst_push_back(&sei->_send_list, &sdn->_lst_node);
+	if(!rslt) goto error_ret;
+
+	_net_try_send_all(sei);
+
+	return 0;
+error_ret:
+	if(sdn)
+	{
+		if(sdn->_data)
+			mm_free(sdn->_data);
+		mm_zfree(__the_send_data_zone, sdn);
+	}
+	return -1;
+}
+
+static inline long _net_disconn(struct _ses_impl* sei)
+{
+	if(sei->_state != _SES_NORMAL)
+		goto error_ret;
+
+	shutdown(sei->_sock_fd, SHUT_RD);
+
+	sei->_state = _SES_CLOSING;
+	_net_try_send_all(sei);
 
 	return 0;
 error_ret:
 	return -1;
 }
 
-static long _net_on_error(struct _acc_impl* aci, struct _ses_impl* sei)
+long net_disconnect(struct session* ses)
 {
+	long rslt;
+	struct _ses_impl* sei;
 
-	return 0;
+	if(!ses) goto error_ret;
+	sei = _conv_ses_impl(ses);
+
+	return _net_disconn(sei);
 error_ret:
 	return -1;
 }
@@ -348,7 +550,6 @@ long net_run(struct acceptor* acc)
 			_net_on_error(aci, sei);
 	}
 
-
 	return 0;
 error_ret:
 	return -1;
@@ -361,20 +562,5 @@ struct session* net_connect(unsigned int ip, unsigned short port, const struct n
 	return &ses->_the_ses;
 error_ret:
 	return 0;
-}
-
-
-long net_send(struct session* ses)
-{
-
-error_ret:
-	return -1;
-}
-
-long net_disconnect(struct session* se)
-{
-
-error_ret:
-	return -1;
 }
 

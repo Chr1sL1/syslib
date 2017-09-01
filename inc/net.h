@@ -22,8 +22,8 @@ typedef long (*on_recv_func)(struct session* se, const void* buf, long len);
 
 struct net_io_cfg
 {
-	unsigned long send_buff_len;
-	unsigned long recv_buff_len;
+	unsigned int send_buff_len;
+	unsigned int recv_buff_len;
 };
 
 struct net_server_cfg
@@ -49,11 +49,8 @@ long net_destroy(struct acceptor* acc);
 long net_run(struct acceptor* acc);
 
 struct session* net_connect(unsigned int ip, unsigned short port, const struct net_client_cfg* cfg);
-long net_send(struct session* se);
+long net_send(struct session* se, const char* data, int data_len);
 long net_disconnect(struct session* se);
-
-long net_set_recv_buf(struct session* se, char* buf, int size);
-long net_set_send_buf(struct session* se, char* buf, int size);
 
 #endif
 
