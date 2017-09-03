@@ -13,6 +13,7 @@
 #include <netinet/tcp.h>
 #include <sys/epoll.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
 #include <unistd.h>
 #include <errno.h>
@@ -24,6 +25,9 @@
 #define NET_BACKLOG_COUNT 1024
 #define MSG_SIZE_LEN (2)
 
+#define ACC_TYPE_INFO (0x11335577)
+#define SES_TYPE_INFO (0x22446688)
+
 enum _SESSION_STATE
 {
 	_SES_INVALID,
@@ -32,34 +36,42 @@ enum _SESSION_STATE
 	_SES_CLOSED,
 };
 
+struct _inet_impl
+{
+	struct internet _the_net;
+	struct epoll_event* _ep_ev;
+	struct dlist _acc_list;
+	struct dlist _ses_list;
+
+	int _epoll_fd;
+};
+
 struct _acc_impl
 {
-	struct acceptor _the_acc;
-	struct net_server_cfg _cfg;
-	struct dlist _ses_list;
-	struct epoll_event* _ep_ev;
-
+	unsigned int _type_info;
 	int _sock_fd;
-	int _epoll_fd;
+
+	struct _inet_impl* _inet;
+	struct acceptor _the_acc;
+	struct dlnode _lst_node;
 };
 
 struct _ses_impl
 {
+	unsigned int _type_info;
+	int _sock_fd;
+
 	struct session _the_ses;
 	struct dlnode _lst_node;
-	struct _acc_impl* _aci;
 	struct dlist _send_list;
 
 	char* _recv_buf;
-	char* _send_buf;
 
 	unsigned int _bytes_recv;
 	unsigned int _recv_buf_len;
 
-	unsigned int _sent_remain;
-	unsigned int _send_buf_len;
+	struct _inet_impl* _inet;
 
-	int _sock_fd;
 	int _state;
 };
 
@@ -75,14 +87,20 @@ static struct mmzone* __the_acc_zone = 0;
 static struct mmzone* __the_ses_zone = 0;
 static struct mmzone* __the_send_data_zone = 0;
 
-static long _net_on_acc(struct _acc_impl* aci);
+static long _net_on_acc(struct _inet_impl* inet, struct _acc_impl* aci);
 static long _net_close(struct _ses_impl* sei);
-static void _net_on_recv(struct _acc_impl* aci, struct _ses_impl* sei);
+static void _net_on_recv(struct _inet_impl* inet, struct _ses_impl* sei);
 
-static void _net_on_error(struct _acc_impl* aci, struct _ses_impl* sei);
+static void _net_on_error(struct _inet_impl* inet, struct _ses_impl* sei);
 static long _net_try_send_all(struct _ses_impl* sei);
-static void _net_on_send(struct _acc_impl* aci, struct _ses_impl* sei);
-static long _net_disconn(struct _ses_impl* sei);
+static void _net_on_send(struct _inet_impl* inet, struct _ses_impl* sei);
+static long _net_disconn(struct _inet_impl* inet, struct _ses_impl* sei);
+
+
+static inline struct _inet_impl* _conv_inet_impl(struct internet* inet)
+{
+	return (struct _inet_impl*)((unsigned long)inet - (unsigned long)&((struct _inet_impl*)(0))->_the_net);
+}
 
 static inline struct _acc_impl* _conv_acc_impl(struct acceptor* acc)
 {
@@ -92,6 +110,11 @@ static inline struct _acc_impl* _conv_acc_impl(struct acceptor* acc)
 static inline struct _ses_impl* _conv_ses_impl(struct session* ses)
 {
 	return (struct _ses_impl*)((unsigned long)ses - (unsigned long)&((struct _ses_impl*)(0))->_the_ses);
+}
+
+static inline struct _acc_impl* _conv_acc_dln(struct dlnode* dln)
+{
+	return (struct _acc_impl*)((unsigned long)dln - (unsigned long)&((struct _acc_impl*)(0))->_lst_node);
 }
 
 static inline struct _ses_impl* _conv_ses_dln(struct dlnode* dln)
@@ -156,32 +179,69 @@ error_ret:
 	return -1;
 }
 
-struct acceptor* net_create(unsigned int ip, unsigned short port, const struct net_server_cfg* cfg)
+struct internet* internet_create(const struct net_config* cfg, const struct net_ops* ops)
 {
 	long rslt;
-	int sock_opt;
-	struct _acc_impl* aci;
-	struct sockaddr_in addr;
-	struct epoll_event ev;
+	struct _inet_impl* inet = 0;
 
 	rslt = _net_try_restore_zones();
 	if(rslt < 0) goto error_ret;
 
+	inet = mm_area_alloc(sizeof(struct _inet_impl), MM_AREA_PERSIS);
+	if(!inet) goto error_ret;
+
+	inet->_ep_ev = mm_area_alloc(cfg->max_conn_count * sizeof(struct epoll_event), MM_AREA_PERSIS);
+	if(!inet->_ep_ev) goto error_ret;
+
+	inet->_epoll_fd = epoll_create(cfg->max_conn_count);
+	if(inet->_epoll_fd < 0) goto error_ret;
+
+	lst_new(&inet->_acc_list);
+	lst_new(&inet->_ses_list);
+
+	inet->_the_net.cfg.send_buff_len = cfg->send_buff_len;
+	inet->_the_net.cfg.recv_buff_len = cfg->recv_buff_len;
+	inet->_the_net.cfg.max_conn_count = cfg->max_conn_count;
+
+	inet->_the_net.ops.func_acc = ops->func_acc;
+	inet->_the_net.ops.func_conn = ops->func_conn;
+	inet->_the_net.ops.func_recv = ops->func_recv;
+	inet->_the_net.ops.func_disconn = ops->func_disconn;
+
+	return &inet->_the_net;
+error_ret:
+	if(inet->_epoll_fd > 0)
+		close(inet->_epoll_fd);
+	if(inet->_ep_ev)
+		mm_free(inet->_ep_ev);
+	if(inet)
+		mm_free(inet);
+	return 0;
+}
+
+struct acceptor* internet_create_acceptor(struct internet* net, unsigned int ip, unsigned short port)
+{
+	long rslt;
+	int sock_opt;
+	struct _acc_impl* aci;
+	struct _inet_impl* inet;
+	struct sockaddr_in addr;
+	struct epoll_event ev;
+
+	if(!net) goto error_ret;
+
+	inet = _conv_inet_impl(net);
+
 	aci = mm_zalloc(__the_acc_zone);
 	if(!aci) goto error_ret;
-
-	aci->_ep_ev = mm_area_alloc(cfg->max_conn_count * sizeof(struct epoll_event), MM_AREA_PERSIS);
-	if(!aci->_ep_ev) goto error_ret;
-
-	lst_new(&aci->_ses_list);
 
 	aci->_sock_fd = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, IPPROTO_TCP);
 	if(aci->_sock_fd < 0) goto error_ret;
 
 	sock_opt = 1;
 	rslt = setsockopt(aci->_sock_fd, SOL_SOCKET, SO_REUSEADDR, &sock_opt, sizeof(int));
-	rslt = setsockopt(aci->_sock_fd, SOL_SOCKET, SO_RCVBUF, &cfg->io_cfg.recv_buff_len, sizeof(int));
-	rslt = setsockopt(aci->_sock_fd, SOL_SOCKET, SO_SNDBUF, &cfg->io_cfg.send_buff_len, sizeof(int));
+	rslt = setsockopt(aci->_sock_fd, SOL_SOCKET, SO_RCVBUF, &net->cfg.recv_buff_len, sizeof(int));
+	rslt = setsockopt(aci->_sock_fd, SOL_SOCKET, SO_SNDBUF, &net->cfg.send_buff_len, sizeof(int));
 
 	ip = htonl(ip);
 
@@ -197,52 +257,136 @@ struct acceptor* net_create(unsigned int ip, unsigned short port, const struct n
 	rslt = listen(aci->_sock_fd, NET_BACKLOG_COUNT);
 	if(rslt < 0) goto error_ret;
 
-	aci->_epoll_fd = epoll_create(cfg->max_conn_count);
-	if(aci->_epoll_fd < 0) goto error_ret;
+	aci->_type_info = ACC_TYPE_INFO;
 
 	ev.events = EPOLLIN;
-	ev.data.fd = aci->_sock_fd;
+	ev.data.ptr = aci;
 
-	rslt = epoll_ctl(aci->_epoll_fd, EPOLL_CTL_ADD, aci->_sock_fd, &ev);
+	rslt = epoll_ctl(inet->_epoll_fd, EPOLL_CTL_ADD, aci->_sock_fd, &ev);
 	if(rslt < 0) goto error_ret;
 
-	memcpy(&aci->_cfg, cfg, sizeof(struct net_server_cfg));
+	aci->_inet = inet;
+
+	lst_clr(&aci->_lst_node);
+	lst_push_back(&inet->_acc_list, &aci->_lst_node);
 
 	return &aci->_the_acc;
 error_ret:
-	if(aci->_epoll_fd > 0)
-		close(aci->_epoll_fd);
-	if(aci->_sock_fd > 0)
-		close(aci->_sock_fd);
-	if(aci->_ep_ev)
-		mm_free(aci->_ep_ev);
-	if(aci)
-		mm_zfree(__the_acc_zone, aci);
+	internet_destroy_acceptor(&aci->_the_acc);
 	return 0;
 }
 
-long net_destroy(struct acceptor* acc)
+long internet_destroy(struct internet* net)
 {
-	struct _acc_impl* aci;
-	if(!acc) goto error_ret;
+	struct dlnode *dln, *rmv_dln;
+	struct _inet_impl* inet;
+	if(!inet) goto error_ret;
 
-	aci = _conv_acc_impl(acc);
+	inet = _conv_inet_impl(net);
 
-	// todo: close all sessions and clear session list.
+	close(inet->_epoll_fd);
+	mm_free(inet->_ep_ev);
 
-	
-	if(aci->_epoll_fd > 0)
-		close(aci->_epoll_fd);
+	dln = inet->_acc_list.head.next;
 
-	if(aci->_sock_fd > 0)
-		close(aci->_sock_fd);
+	while(dln != &inet->_acc_list.tail)
+	{
+		struct _acc_impl* aci = _conv_acc_dln(dln);
+		rmv_dln = dln;
+		dln = dln->next;
+
+		internet_destroy_acceptor(&aci->_the_acc);
+		lst_remove(&inet->_acc_list, rmv_dln);
+	}
+
+	dln = inet->_ses_list.head.next;
+
+	while(dln != &inet->_ses_list.tail)
+	{
+		struct _ses_impl* sei = _conv_ses_dln(dln);
+		rmv_dln = dln;
+		dln = dln->next;
+
+		_net_close(sei);
+
+		lst_remove(&inet->_acc_list, rmv_dln);
+	}
+
+	mm_free(inet);
 
 	return 0;
 error_ret:
 	return -1;
 }
 
-static long _net_on_acc(struct _acc_impl* aci)
+long internet_destroy_acceptor(struct acceptor* acc)
+{
+	struct _acc_impl* aci;
+	struct _inet_impl* inet;
+
+	if(!acc) goto error_ret;
+
+	aci = _conv_acc_impl(acc);
+	inet = aci->_inet;
+
+	epoll_ctl(inet->_epoll_fd, EPOLL_CTL_DEL, aci->_sock_fd, 0);
+
+	close(aci->_sock_fd);
+	aci->_type_info = 0;
+
+	return mm_zfree(__the_acc_zone, aci);
+error_ret:
+	return -1;
+}
+
+static inline struct _ses_impl* _net_create_session(struct _inet_impl* inet, int socket_fd)
+{
+	long rslt;
+	int sock_opt;
+	struct _ses_impl* sei = 0;
+	struct epoll_event ev;
+
+	sei = mm_zalloc(__the_ses_zone);
+	if(!sei) goto error_ret;
+
+	sei->_state = _SES_INVALID;
+	sei->_recv_buf = 0;
+
+	lst_clr(&sei->_lst_node);
+	lst_new(&sei->_send_list);
+
+	sei->_sock_fd = socket_fd;
+	sei->_inet = inet;
+	sei->_type_info = SES_TYPE_INFO;
+
+	sock_opt = 1;
+	rslt = setsockopt(sei->_sock_fd, SOL_SOCKET, SO_KEEPALIVE, &sock_opt, sizeof(int));
+	rslt = setsockopt(sei->_sock_fd, SOL_SOCKET, SO_RCVBUF, &inet->_the_net.cfg.recv_buff_len, sizeof(int));
+	rslt = setsockopt(sei->_sock_fd, SOL_SOCKET, SO_SNDBUF, &inet->_the_net.cfg.send_buff_len, sizeof(int));
+
+	sei->_recv_buf_len = inet->_the_net.cfg.recv_buff_len;
+	sei->_recv_buf = mm_alloc(sei->_recv_buf_len);
+	if(!sei->_recv_buf) goto error_ret;
+
+	ev.events = EPOLLIN | EPOLLOUT | EPOLLET | EPOLLRDHUP;
+	ev.data.ptr = sei;
+
+	rslt = epoll_ctl(inet->_epoll_fd, EPOLL_CTL_ADD, sei->_sock_fd, &ev);
+	if(rslt < 0) goto error_ret;
+
+	sei->_state = _SES_NORMAL;
+	lst_push_back(&inet->_ses_list, &sei->_lst_node);
+
+	return sei;
+error_ret:
+	if(sei)
+	{
+		_net_close(sei);
+	}
+	return 0;
+}
+
+static long _net_on_acc(struct _inet_impl* inet, struct _acc_impl* aci)
 {
 	long rslt;
 	int new_sock, sock_opt;
@@ -254,61 +398,17 @@ static long _net_on_acc(struct _acc_impl* aci)
 	new_sock = accept4(aci->_sock_fd, (struct sockaddr*)&remote_addr, &addr_len, 0);
 	if(new_sock < 0) goto error_ret;
 
-	sock_opt = 1;
-	rslt = setsockopt(aci->_sock_fd, SOL_SOCKET, SO_KEEPALIVE, &sock_opt, sizeof(int));
-	rslt = setsockopt(aci->_sock_fd, SOL_SOCKET, SO_RCVBUF, &aci->_cfg.io_cfg.recv_buff_len, sizeof(int));
-	rslt = setsockopt(aci->_sock_fd, SOL_SOCKET, SO_SNDBUF, &aci->_cfg.io_cfg.send_buff_len, sizeof(int));
-
-	sei = mm_zalloc(__the_ses_zone);
+	sei = _net_create_session(inet, new_sock);
 	if(!sei) goto error_ret;
-
-	sei->_state = _SES_INVALID;
-
-	lst_clr(&sei->_lst_node);
-	lst_new(&sei->_send_list);
-
-	sei->_sock_fd = new_sock;
-	sei->_aci = aci;
 
 	sei->_the_ses.remote_ip = ntohl(*(unsigned int*)&remote_addr.sin_addr);
 	sei->_the_ses.remote_port = ntohs(remote_addr.sin_port);
 
-	sei->_recv_buf = 0;
-	sei->_send_buf = 0;
-
-	sei->_recv_buf_len = aci->_cfg.io_cfg.recv_buff_len;
-	sei->_send_buf_len = aci->_cfg.io_cfg.send_buff_len;
-
-	sei->_recv_buf = mm_alloc(sei->_recv_buf_len);
-	if(!sei->_recv_buf) goto error_ret;
-
-	sei->_send_buf = mm_alloc(sei->_send_buf_len);
-	if(!sei->_send_buf) goto error_ret;
-
-	ev.events = EPOLLIN | EPOLLOUT | EPOLLET | EPOLLRDHUP;
-	ev.data.ptr = sei;
-
-	rslt = epoll_ctl(aci->_epoll_fd, EPOLL_CTL_ADD, new_sock, &ev);
-	if(rslt < 0) goto error_ret;
-
-	sei->_state = _SES_NORMAL;
-
-	if(aci->_cfg.func_acc)
-		(*aci->_cfg.func_acc)(&aci->_the_acc, &sei->_the_ses);
+	if(inet->_the_net.ops.func_acc)
+		(*inet->_the_net.ops.func_acc)(&aci->_the_acc, &sei->_the_ses);
 
 	return 0;
 error_ret:
-	perror(strerror(errno));
-	if(sei)
-	{
-		if(sei->_recv_buf)
-			mm_free(sei->_recv_buf);
-		if(sei->_send_buf)
-			mm_free(sei->_send_buf);
-		if(sei->_sock_fd)
-			close(sei->_sock_fd);
-			mm_zfree(__the_ses_zone, sei);
-	}
 	return -1;
 }
 
@@ -340,7 +440,7 @@ static long _net_close(struct _ses_impl* sei)
 	return mm_zfree(__the_ses_zone, sei);
 }
 
-static void _net_on_recv(struct _acc_impl* aci, struct _ses_impl* sei)
+static void _net_on_recv(struct _inet_impl* inet, struct _ses_impl* sei)
 {
 	long rslt;
 	int recv_len = 0;
@@ -361,8 +461,8 @@ static void _net_on_recv(struct _acc_impl* aci, struct _ses_impl* sei)
 
 		if(sei->_bytes_recv >= sei->_recv_buf_len)
 		{
-			if(aci->_cfg.func_recv)
-				(*aci->_cfg.func_recv)(&sei->_the_ses, sei->_recv_buf, sei->_bytes_recv);
+			if(inet->_the_net.ops.func_recv)
+				(*inet->_the_net.ops.func_recv)(&sei->_the_ses, sei->_recv_buf, sei->_bytes_recv);
 
 			p = sei->_recv_buf;
 			sei->_bytes_recv = 0;
@@ -374,11 +474,11 @@ static void _net_on_recv(struct _acc_impl* aci, struct _ses_impl* sei)
 	{
 		if(errno != EWOULDBLOCK && errno != EAGAIN)
 			goto error_ret;
-		else if(aci->_cfg.func_recv)
-			(*aci->_cfg.func_recv)(&sei->_the_ses, sei->_recv_buf, sei->_bytes_recv);
+		else if(inet->_the_net.ops.func_recv)
+			(*inet->_the_net.ops.func_recv)(&sei->_the_ses, sei->_recv_buf, sei->_bytes_recv);
 	}
 	else if(recv_len == 0)
-		_net_disconn(sei);
+		_net_disconn(inet, sei);
 
 	return;
 error_ret:
@@ -386,9 +486,9 @@ error_ret:
 	return;
 }
 
-static inline void _net_on_error(struct _acc_impl* aci, struct _ses_impl* sei)
+static inline void _net_on_error(struct _inet_impl* inet, struct _ses_impl* sei)
 {
-	_net_close(sei);
+	_net_disconn(inet, sei);
 }
 
 
@@ -444,12 +544,12 @@ error_ret:
 	return -1;
 }
 
-static inline void _net_on_send(struct _acc_impl* aci, struct _ses_impl* sei)
+static inline void _net_on_send(struct _inet_impl* inet, struct _ses_impl* sei)
 {
 	_net_try_send_all(sei);
 }
 
-long net_send(struct session* ses, const char* data, int data_len)
+long internet_send(struct session* ses, const char* data, int data_len)
 {
 	long rslt;
 	struct _ses_impl* sei;
@@ -492,17 +592,20 @@ error_ret:
 	return -1;
 }
 
-static inline long _net_disconn(struct _ses_impl* sei)
+static inline long _net_disconn(struct _inet_impl* inet, struct _ses_impl* sei)
 {
-	struct _acc_impl* aci = sei->_aci;
+	long rslt;
 
 	if(sei->_state != _SES_NORMAL)
 		goto error_ret;
 
-	if(aci->_cfg.func_disconn)
-		(*aci->_cfg.func_disconn)(&sei->_the_ses);
+	if(inet->_the_net.ops.func_disconn)
+		(*inet->_the_net.ops.func_disconn)(&sei->_the_ses);
 
 	shutdown(sei->_sock_fd, SHUT_RD);
+
+	rslt = epoll_ctl(inet->_epoll_fd, EPOLL_CTL_DEL, sei->_sock_fd, 0);
+	if(rslt < 0) goto error_ret;
 
 	sei->_state = _SES_CLOSING;
 	_net_try_send_all(sei);
@@ -512,7 +615,7 @@ error_ret:
 	return -1;
 }
 
-long net_disconnect(struct session* ses)
+long internet_disconnect(struct session* ses)
 {
 	long rslt;
 	struct _ses_impl* sei;
@@ -520,52 +623,85 @@ long net_disconnect(struct session* ses)
 	if(!ses) goto error_ret;
 	sei = _conv_ses_impl(ses);
 
-	return _net_disconn(sei);
+	return _net_disconn(sei->_inet, sei);
 error_ret:
 	return -1;
 }
 
-long net_run(struct acceptor* acc)
+long internet_run(struct internet* net)
 {
 	long rslt, cnt;
-	struct _acc_impl* aci;
+	struct _inet_impl* inet;
 	struct _ses_impl* sei;
-	if(!acc) goto error_ret;
 
-	aci = _conv_acc_impl(acc);
+	if(!net) goto error_ret;
+	inet = _conv_inet_impl(net);
 
-	cnt = epoll_wait(aci->_epoll_fd, aci->_ep_ev, aci->_cfg.max_conn_count, -1);
+	cnt = epoll_wait(inet->_epoll_fd, inet->_ep_ev, inet->_the_net.cfg.max_conn_count, -1);
 	if(cnt < 0) goto error_ret;
 
 	for(long i = 0; i < cnt; ++i)
 	{
-		if(aci->_sock_fd == aci->_ep_ev[i].data.fd)
+		unsigned int type_info = *(unsigned int*)(inet->_ep_ev[i].data.ptr);
+		if(type_info == ACC_TYPE_INFO)
 		{
-			rslt = _net_on_acc(aci);
-			continue;
+			rslt = _net_on_acc(inet, (struct _acc_impl*)inet->_ep_ev[i].data.ptr);
+			if(rslt < 0) goto error_ret;
 		}
+		else if(type_info == SES_TYPE_INFO)
+		{
+			sei = (struct _ses_impl*)inet->_ep_ev[i].data.ptr;
 
-		sei = (struct _ses_impl*)aci->_ep_ev[i].data.ptr;
-
-		if(aci->_ep_ev[i].events & EPOLLIN)
-			_net_on_recv(aci, sei);
-		if(aci->_ep_ev[i].events & EPOLLOUT)
-			_net_on_send(aci, sei);
-		if(aci->_ep_ev[i].events & EPOLLERR)
-			_net_on_error(aci, sei);
+			if(inet->_ep_ev[i].events & EPOLLIN)
+				_net_on_recv(inet, sei);
+			if(inet->_ep_ev[i].events & EPOLLOUT)
+				_net_on_send(inet, sei);
+			if(inet->_ep_ev[i].events & EPOLLERR)
+				_net_on_error(inet, sei);
+		}
 	}
 
 	return 0;
 error_ret:
 	return -1;
+
 }
 
-struct session* net_connect(unsigned int ip, unsigned short port, const struct net_client_cfg* cfg)
+struct session* internet_connect(struct internet* net, unsigned int ip, unsigned short port)
 {
-	struct _ses_impl* ses;
+	long rslt;
+	int new_sock;
 
-	return &ses->_the_ses;
+	struct _inet_impl* inet;
+	struct _ses_impl* sei;
+	struct sockaddr_in addr;
+
+	if(!net) goto error_ret;
+
+	inet = _conv_inet_impl(net);
+
+	new_sock = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, IPPROTO_TCP);
+	if(new_sock < 0) goto error_ret;
+
+	sei = _net_create_session(inet, new_sock);
+	if(!sei) goto error_ret;
+
+	addr.sin_family = AF_INET;
+	addr.sin_addr = *(struct in_addr*)&ip;
+	addr.sin_port = htons(port);
+
+	rslt = connect(sei->_sock_fd, (struct sockaddr*)&addr, sizeof(addr));
+	if(rslt < 0 && errno != EINPROGRESS) goto error_ret;
+
+	if(net->ops.func_conn)
+		(*net->ops.func_conn)(&sei->_the_ses);
+
+	return &sei->_the_ses;
+
 error_ret:
+	perror(strerror(errno));
+	if(sei)
+		_net_close(sei);
 	return 0;
 }
 

@@ -177,13 +177,11 @@ long shmm_destroy(struct shmm_blk* shm)
 	void* ret_addr;
 	struct _shmm_blk_impl* sbi = _conv_blk(shm);
 
-	if(shmm_close(shm) < 0)
-		goto error_ret;
-
-	sbi->_shmm_tag = 0;
-
 	rslt = shmctl(sbi->_fd, IPC_RMID, 0);
 	if(rslt < 0)
+		goto error_ret;
+
+	if(shmm_close(shm) < 0)
 		goto error_ret;
 
 	return 0;

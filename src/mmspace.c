@@ -50,6 +50,7 @@ struct _mm_space_impl
 	int _next_shmm_key;
 	int _total_shmm_count;
 
+	struct shmm_blk* _this_shm;
 	struct mm_space_config _cfg;
 	struct _mm_area_impl _area_list[MM_AREA_COUNT];
 
@@ -556,6 +557,7 @@ long mm_initialize(struct mm_space_config* cfg)
 	rb_init(&mm->_all_section_tree, _shmm_comp_func);
 	lst_new(&mm->_zone_list);
 
+	mm->_this_shm = shm;
 	mm->_total_shmm_count = 0;
 	mm->_usr_globl = 0;
 	mm->_zone_hash.hash_list = (struct dlist*)((void*)mm + sizeof(struct _mm_space_impl));
@@ -586,6 +588,16 @@ error_ret:
 long mm_uninitialize(void)
 {
 	if(!__the_mmspace) goto error_ret;
+
+	for(int i = 0; i < __the_mmspace->_total_shmm_count; ++i)
+	{
+		struct shmm_blk* shm = (struct shmm_blk*)__the_mmspace->_shmm_save_list[i]._base_addr;
+		if(!shm) continue;
+
+		shmm_destroy(shm);
+	}
+
+	shmm_destroy(__the_mmspace->_this_shm);
 
 	return 0;
 error_ret:

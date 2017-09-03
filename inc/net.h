@@ -20,37 +20,39 @@ typedef long (*on_conn_func)(struct session* se);
 typedef long (*on_disconn_func)(struct session* se);
 typedef long (*on_recv_func)(struct session* se, const void* buf, long len);
 
-struct net_io_cfg
+struct net_config
 {
 	unsigned int send_buff_len;
 	unsigned int recv_buff_len;
+	unsigned int max_conn_count;
 };
 
-struct net_server_cfg
+struct net_ops
 {
-	struct net_io_cfg io_cfg;
-	unsigned long max_conn_count;
-
 	on_acc_func func_acc;
-	on_recv_func func_recv;
-	on_disconn_func func_disconn;
-};
-
-struct net_client_cfg
-{
-	struct net_io_cfg io_cfg;
 	on_conn_func func_conn;
-	on_disconn_func func_disconn;
 	on_recv_func func_recv;
+	on_disconn_func func_disconn;
 };
 
-struct acceptor* net_create(unsigned int ip, unsigned short port, const struct net_server_cfg* cfg);
-long net_destroy(struct acceptor* acc);
-long net_run(struct acceptor* acc);
+struct internet
+{
+	struct net_config cfg;
+	struct net_ops ops;
+};
 
-struct session* net_connect(unsigned int ip, unsigned short port, const struct net_client_cfg* cfg);
-long net_send(struct session* se, const char* data, int data_len);
-long net_disconnect(struct session* se);
+struct internet* internet_create(const struct net_config* cfg, const struct net_ops* ops);
+long internet_destroy(struct internet* net);
+
+struct acceptor* internet_create_acceptor(struct internet* net, unsigned int ip, unsigned short port);
+long internet_destroy_acceptor(struct acceptor* acc);
+
+struct session* internet_connect(struct internet* net, unsigned int ip, unsigned short port);
+long internet_disconnect(struct session* ses);
+
+long internet_send(struct session* se, const char* data, int data_len);
+
+long internet_run(struct internet* net);
 
 #endif
 
