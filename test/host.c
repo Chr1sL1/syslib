@@ -1398,7 +1398,7 @@ long init_mm(int key)
 	{
 		.total_size = 200 * 1024 * 1024,
 		.min_order = 5,
-		.max_order = 11,
+		.max_order = 16,
 	};
 
 	rslt = mm_initialize(&cfg);
@@ -1420,7 +1420,7 @@ error_ret:
 
 static long _test_server_on_recv(struct session* se, const void* buf, long len)
 {
-	const char* echo = "helloooooooooooooooooooooooooooooo world!!!\n";
+	const char* echo = "helloooooooooooooooooooooooooooooo world!!!";
 	if(len <= 2)
 	{
 		internet_send(se, echo, strlen(echo) + 1);
@@ -1428,15 +1428,34 @@ static long _test_server_on_recv(struct session* se, const void* buf, long len)
 	}
 	else
 	{
-//		printf("recvd: %s, len: %ld\n", (char*)buf, len);
+		printf("recvd: %s, len: %ld\n", (char*)buf, len);
 		internet_send(se, echo, strlen(echo) + 1);
 	}
-
 
 	return 0;
 error_ret:
 	return -1;
 }
+
+static long _test_server_on_recv_cli(struct session* se, const void* buf, long len)
+{
+	const char* echo = "due!";
+	if(len <= 2)
+	{
+		internet_send(se, echo, strlen(echo) + 1);
+		internet_disconnect(se);
+	}
+	else
+	{
+		printf("recvd: %s, len: %ld\n", (char*)buf, len);
+		internet_send(se, echo, strlen(echo) + 1);
+	}
+
+	return 0;
+error_ret:
+	return -1;
+}
+
 
 static long _test_server_on_disconn(struct session* se)
 {
@@ -1447,7 +1466,7 @@ static long _test_server_on_disconn(struct session* se)
 
 static long _test_server_on_conn(struct session* se)
 {
-	const char* msg = "due.\n";
+	const char* msg = "due.";
 	printf("connected.\n");
 
 	internet_send(se, msg, strlen(msg) + 1);
@@ -1467,7 +1486,7 @@ long test_server(void)
 	struct session* se_conn;
 	struct sigaction sa;
 
-	cfg.max_conn_count = 100;
+	cfg.max_conn_count = 1000;
 	cfg.recv_buff_len = 100;
 	cfg.send_buff_len = 100;
 
@@ -1486,23 +1505,42 @@ long test_server(void)
 	if(!net) goto error_ret;
 
 	acc = internet_create_acceptor(net, 0, 7070);
-	if(!acc) goto error_ret;
+
+	if(!acc)
+	{
+		perror("accept failed.\n");
+		goto error_ret;
+	}
 
 	for(int i = 0; i < cfg.max_conn_count; i++)
 	{
+		struct session_ops sops;
+		sops.func_recv = _test_server_on_recv_cli;
+		sops.func_disconn = 0;
+
 		se_conn = internet_connect(net, (unsigned int)inet_addr("192.168.1.3"), 7070);
-		if(!se_conn) goto error_ret;
+		if(!se_conn)
+		{
+			perror("connect failed.\n");
+			goto error_ret;
+		}
+
+		internet_bind_session_ops(se_conn, &sops);
 	}
 
 	while(running)
 	{
 		rslt = internet_run(net);
 		if(rslt < 0)
+		{
+			perror("run failed.\n");
 			goto error_ret;
+		}
 	}
 
 	return 0;
 error_ret:
+	perror(strerror(errno));
 	if(net)
 		internet_destroy(net);
 
@@ -1522,7 +1560,7 @@ int main(void)
 	unsigned long seed = time(0);
 	srandom(seed);
 
-	rslt = init_mm(14);
+	rslt = init_mm(3);
 	if(rslt < 0) goto error_ret;
 
 	test_server();

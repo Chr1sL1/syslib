@@ -64,6 +64,7 @@ struct _ses_impl
 	struct session _the_ses;
 	struct dlnode _lst_node;
 	struct dlist _send_list;
+	struct session_ops _ops;
 
 	char* _recv_buf;
 
@@ -210,12 +211,14 @@ struct internet* internet_create(const struct net_config* cfg, const struct net_
 
 	return &inet->_the_net;
 error_ret:
-	if(inet->_epoll_fd > 0)
-		close(inet->_epoll_fd);
-	if(inet->_ep_ev)
-		mm_free(inet->_ep_ev);
 	if(inet)
+	{
+		if(inet->_epoll_fd > 0)
+			close(inet->_epoll_fd);
+		if(inet->_ep_ev)
+			mm_free(inet->_ep_ev);
 		mm_free(inet);
+	}
 	return 0;
 }
 
@@ -447,9 +450,12 @@ static void _net_on_recv(struct _inet_impl* inet, struct _ses_impl* sei)
 
 	char* p = sei->_recv_buf;
 	sei->_bytes_recv = 0;
+	on_recv_func rf;
 
 	if(!sei->_recv_buf || sei->_recv_buf_len <= 0 || sei->_state != _SES_NORMAL)
 		goto error_ret;
+
+	rf = sei->_ops.func_recv ? sei->_ops.func_recv : inet->_the_net.ops.func_recv;
 
 	do
 	{
@@ -461,8 +467,8 @@ static void _net_on_recv(struct _inet_impl* inet, struct _ses_impl* sei)
 
 		if(sei->_bytes_recv >= sei->_recv_buf_len)
 		{
-			if(inet->_the_net.ops.func_recv)
-				(*inet->_the_net.ops.func_recv)(&sei->_the_ses, sei->_recv_buf, sei->_bytes_recv);
+			if(rf)
+				(*rf)(&sei->_the_ses, sei->_recv_buf, sei->_bytes_recv);
 
 			p = sei->_recv_buf;
 			sei->_bytes_recv = 0;
@@ -474,8 +480,8 @@ static void _net_on_recv(struct _inet_impl* inet, struct _ses_impl* sei)
 	{
 		if(errno != EWOULDBLOCK && errno != EAGAIN)
 			goto error_ret;
-		else if(inet->_the_net.ops.func_recv)
-			(*inet->_the_net.ops.func_recv)(&sei->_the_ses, sei->_recv_buf, sei->_bytes_recv);
+		else if(rf)
+			(*rf)(&sei->_the_ses, sei->_recv_buf, sei->_bytes_recv);
 	}
 	else if(recv_len == 0)
 		_net_disconn(inet, sei);
@@ -595,12 +601,15 @@ error_ret:
 static inline long _net_disconn(struct _inet_impl* inet, struct _ses_impl* sei)
 {
 	long rslt;
+	on_disconn_func df;
 
 	if(sei->_state != _SES_NORMAL)
 		goto error_ret;
 
-	if(inet->_the_net.ops.func_disconn)
-		(*inet->_the_net.ops.func_disconn)(&sei->_the_ses);
+	df = sei->_ops.func_disconn ? sei->_ops.func_disconn : inet->_the_net.ops.func_disconn;
+
+	if(df)
+		(*df)(&sei->_the_ses);
 
 	shutdown(sei->_sock_fd, SHUT_RD);
 
@@ -703,5 +712,28 @@ error_ret:
 	if(sei)
 		_net_close(sei);
 	return 0;
+}
+
+inline long internet_bind_session_ops(struct session* ses, const struct session_ops* ops)
+{
+	struct _ses_impl* sei;
+
+	if(!ses) goto error_ret;
+	sei = _conv_ses_impl(ses);
+
+	if(ops)
+	{
+		sei->_ops.func_recv = ops->func_recv;
+		sei->_ops.func_disconn = ops->func_disconn;
+	}
+	else
+	{
+		sei->_ops.func_recv = 0;
+		sei->_ops.func_disconn = 0;
+	}
+
+	return 0;
+error_ret:
+	return -1;
 }
 

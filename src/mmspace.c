@@ -66,6 +66,7 @@ struct _mmzone_impl
 {
 	struct mmzone _the_zone;
 	unsigned long _cache_size;
+	unsigned long _obj_aligned_size;
 
 	struct dlist _full_slab_list;
 	struct dlist _empty_slab_list;
@@ -272,6 +273,8 @@ static struct _mm_cache* _mm_zcache_new(struct _mmzone_impl* mzi)
 
 	mc->_alloc_bits = 0;
 	mc->_free_count = mc->_obj_count;
+
+	__builtin_prefetch(mc->_obj_ptr);
 
 	_mm_zmove_cache(mc, 0, &mzi->_empty_slab_list);
 
@@ -682,6 +685,7 @@ retry_alloc:
 	goto retry_alloc;
 
 succ_ret:
+	__builtin_prefetch(p);
 	return p;
 error_ret:
 	return 0;

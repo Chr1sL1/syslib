@@ -35,6 +35,12 @@ struct net_ops
 	on_disconn_func func_disconn;
 };
 
+struct session_ops
+{
+	on_recv_func func_recv;
+	on_disconn_func func_disconn;
+};
+
 struct internet
 {
 	struct net_config cfg;
@@ -50,9 +56,11 @@ long internet_destroy_acceptor(struct acceptor* acc);
 struct session* internet_connect(struct internet* net, unsigned int ip, unsigned short port);
 long internet_disconnect(struct session* ses);
 
-long internet_send(struct session* se, const char* data, int data_len);
-
+long internet_send(struct session* ses, const char* data, int data_len);
 long internet_run(struct internet* net);
+
+long internet_bind_session_ops(struct session* ses, const struct session_ops* ops);
+
 
 #endif
 
