@@ -27,6 +27,7 @@ struct _shmm_blk_impl
 {
 	unsigned long _shmm_tag;
 	struct shmm_blk _the_blk;
+
 	int _the_key;
 	int _fd;
 };
@@ -36,11 +37,30 @@ static inline struct _shmm_blk_impl* _conv_blk(struct shmm_blk* blk)
 	return (struct _shmm_blk_impl*)((unsigned long)blk - (unsigned long)&(((struct _shmm_blk_impl*)(0))->_the_blk));
 }
 
+inline void* shmm_begin_addr(struct shmm_blk* shm)
+{
+	if(!shm) goto error_ret;
+
+	return (void*)shm + shm->addr_begin_offset;
+error_ret:
+	return 0;
+}
+
+inline void* shmm_end_addr(struct shmm_blk* shm)
+{
+	if(!shm) goto error_ret;
+
+	return (void*)shm + shm->addr_end_offset;
+error_ret:
+	return 0;
+}
+
 struct shmm_blk* shmm_create(int key, void* at_addr, unsigned long size, int try_huge_page)
 {
 	int flag = 0;
 	int fd;
 	void* ret_addr = 0;
+	void* addr_begin;
 	struct _shmm_blk_impl* sbi;
 
 	if(key == IPC_PRIVATE || key <= 0 || size <= 0)
@@ -82,8 +102,12 @@ struct shmm_blk* shmm_create(int key, void* at_addr, unsigned long size, int try
 
 	sbi = (struct _shmm_blk_impl*)ret_addr;
 	sbi->_shmm_tag = SHMM_TAG;
-	sbi->_the_blk.addr_begin = ret_addr + round_up(sizeof(struct _shmm_blk_impl), 128);
-	sbi->_the_blk.addr_end = ret_addr + size;
+
+	sbi->_the_blk.addr_end_offset = size;
+
+	addr_begin = move_ptr_roundup(ret_addr, sizeof(struct _shmm_blk_impl), SHM_PAGE_SIZE);
+	sbi->_the_blk.addr_begin_offset = addr_begin - ret_addr;
+
 	sbi->_the_key = key;
 	sbi->_fd = fd;
 
@@ -135,8 +159,7 @@ struct shmm_blk* shmm_open_raw(int key, void* at_addr)
 		goto error_ret;
 
 	sbi = (struct _shmm_blk_impl*)ret_addr;
-	if(sbi->_shmm_tag != SHMM_TAG
-			|| sbi->_the_blk.addr_begin != ret_addr + round_up(sizeof(struct _shmm_blk_impl), 128)|| sbi->_the_key != key)
+	if(sbi->_shmm_tag != SHMM_TAG || sbi->_the_key != key)
 		goto error_ret;
 
 	return &sbi->_the_blk;
@@ -150,27 +173,23 @@ error_ret:
 
 }
 
-long shmm_close(struct shmm_blk* shm)
+inline long shmm_close(struct shmm_blk* shm)
 {
-	void* addr_begin;
 	struct _shmm_blk_impl* sbi = _conv_blk(shm);
-	if(!sbi->_the_blk.addr_begin || !sbi->_the_blk.addr_end)
+	if(!sbi->_the_blk.addr_begin_offset || !sbi->_the_blk.addr_end_offset)
 		goto error_ret;
 
-	addr_begin = sbi->_the_blk.addr_begin - round_up(sizeof(struct _shmm_blk_impl), 128);
-
-	sbi = (struct _shmm_blk_impl*)(addr_begin);
 	if(sbi->_shmm_tag != SHMM_TAG)
 		goto error_ret;
 
-	shmdt(addr_begin);
+	shmdt((void*)shm);
 
 	return 0;
 error_ret:
 	return -1;
 }
 
-long shmm_destroy(struct shmm_blk* shm)
+inline long shmm_destroy(struct shmm_blk* shm)
 {
 	int fd;
 	long rslt;

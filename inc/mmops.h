@@ -44,15 +44,32 @@ enum MM_SHM_TYPE
 	MM_SHM_MEMORY_SPACE,
 	MM_SHM_IPC,
 
-	MM_SHM_COUNT,
+	MM_SHM_COUNT, // should be no more than 15.
 };
 
-static inline int mm_shm_create_key(int shm_type, int shm_key)
-{
-	if(shm_type >= MM_SHM_COUNT || shm_key > 0xFFFFFF) return 0;
 
-	return (shm_type << 24) + shm_key;
-}
+#pragma pack(1)
+union shmm_sub_key
+{
+	struct
+	{
+		unsigned char ar_type;
+		unsigned char ar_idx;
+	};
+
+	struct
+	{
+		unsigned short ipc_channel;
+	};
+
+	unsigned short sub_key;
+};
+#pragma pack()
+
+// shm_type should be no more than MM_SHM_COUNT.
+// sys_id should be no more than 8191.
+//
+int mm_create_shm_key(int shm_type, int sys_id, const union shmm_sub_key* sub_key);
 
 #endif
 

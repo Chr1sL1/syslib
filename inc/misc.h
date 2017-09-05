@@ -25,4 +25,6 @@ void* move_ptr_align8(void* ptr, unsigned long offset);
 void* move_ptr_align16(void* ptr, unsigned long offset);
 void* move_ptr_align64(void* ptr, unsigned long offset);
 void* move_ptr_align128(void* ptr, unsigned long offset);
+
+void* move_ptr_roundup(void* ptr, unsigned long offset, unsigned long align);
 #endif

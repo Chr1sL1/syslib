@@ -421,14 +421,17 @@ static inline struct shmm_blk* _conv_shmm_from_dln(struct dlnode* dln)
 
 static inline struct _mm_section_impl* _get_section(struct shmm_blk* shm)
 {
-	return (struct _mm_section_impl*)shm->addr_begin;
+	return (struct _mm_section_impl*)shmm_begin_addr(shm);
 }
 
 static long _shmm_comp_func(void* key, struct rbnode* rbn)
 {
 	struct shmm_blk* shm = _conv_shmm_from_rbn(rbn);
-	if(key < shm->addr_begin) return -1;
-	else if(key >= shm->addr_end) return 1;
+	void* addr_begin = shmm_begin_addr(shm);
+	void* addr_end = shmm_end_addr(shm);
+
+	if(key < addr_begin) return -1;
+	else if(key >= addr_end) return 1;
 
 	return 0;
 }
@@ -474,11 +477,15 @@ static long _mm_create_section(struct _mm_space_impl* mm, int ar_type)
 	struct _mm_area_impl* ar;
 	struct _mm_section_impl* sec = 0;
 	struct shmm_blk* shm;
+	union shmm_sub_key sub_key;
+	void* addr_begin;
 
 	if(mm->_total_shmm_count >= mm->_cfg.max_shmm_count) goto error_ret;
 
-	shmm_key = _make_shmm_key(mm, ar_type, ++mm->_next_shmm_key);
-	shmm_key = mm_shm_create_key(MM_SHM_MEMORY_SPACE, shmm_key);
+	sub_key.ar_type = ar_type;
+	sub_key.ar_idx = ++mm->_next_shmm_key;
+
+	shmm_key = mm_create_shm_key(MM_SHM_MEMORY_SPACE, mm->_cfg.sys_shmm_key, &sub_key);
 
 	shm = shmm_create(shmm_key, 0, mm->_cfg.mm_cfg[ar_type].total_size, mm->_cfg.try_huge_page);
 	if(!shm) goto error_ret;
@@ -495,12 +502,15 @@ static long _mm_create_section(struct _mm_space_impl* mm, int ar_type)
 	rslt = lst_push_back(&ar->_section_list, &shm->lst_node);
 	if(rslt < 0) goto error_ret;
 
-	sec = (struct _mm_section_impl*)(shm->addr_begin);
+	addr_begin = shmm_begin_addr(shm);
+	if(!addr_begin) goto error_ret;
+
+	sec = (struct _mm_section_impl*)addr_begin;
 
 	sec->_area_type = ar_type;
 	sec->_padding = 0;
 
-	sec->_allocator = (*__mm_area_ops[ar_type]->create_func)(shm->addr_begin + sizeof(struct _mm_section_impl), &mm->_cfg.mm_cfg[ar_type]);
+	sec->_allocator = (*__mm_area_ops[ar_type]->create_func)(addr_begin + sizeof(struct _mm_section_impl), &mm->_cfg.mm_cfg[ar_type]);
 	if(!sec->_allocator) goto error_ret;
 
 	ar->_free_section = sec;
@@ -527,6 +537,7 @@ long mm_initialize(struct mm_space_config* cfg)
 	unsigned long shm_size;
 	struct shmm_blk* shm;
 	struct _mm_space_impl* mm;
+	void* addr_begin;
 
 	if(__the_mmspace || !cfg || cfg->max_shmm_count <= 0) goto error_ret;
 
@@ -539,7 +550,10 @@ long mm_initialize(struct mm_space_config* cfg)
 	shm = shmm_open_raw(cfg->sys_shmm_key, (void*)cfg->sys_begin_addr);
 	if(shm)
 	{
-		mm = (struct _mm_space_impl*)shm->addr_begin;
+		addr_begin = shmm_begin_addr(shm);
+		if(!addr_begin) goto error_ret;
+
+		mm = (struct _mm_space_impl*)addr_begin;
 		if(mm->_mm_label != MM_LABEL) goto error_ret;
 
 		rslt = _mm_load_area(mm);
@@ -553,7 +567,10 @@ long mm_initialize(struct mm_space_config* cfg)
 	shm = shmm_create(cfg->sys_shmm_key, (void*)cfg->sys_begin_addr, shm_size, cfg->try_huge_page);
 	if(!shm) goto error_ret;
 
-	mm = (struct _mm_space_impl*)(shm->addr_begin);
+	addr_begin = shmm_begin_addr(shm);
+	if(!addr_begin) goto error_ret;
+
+	mm = (struct _mm_space_impl*)(addr_begin);
 	memcpy(&mm->_cfg, cfg, sizeof(struct mm_space_config));
 	mm->_mm_label = MM_LABEL;
 

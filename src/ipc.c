@@ -1,7 +1,11 @@
 #include "ipc.h"
 #include "shmem.h"
 #include "ringbuf.h"
+#include "mmspace.h"
+
 #include <stdlib.h>
+
+#define IPC_ZONE_NAME "sys_ipc_zone"
 
 struct _ipc_peer_impl
 {
@@ -10,51 +14,81 @@ struct _ipc_peer_impl
 	struct ring_buf* _rb;
 };
 
+static struct mmzone* __the_ipc_zone = 0;
+
 static inline struct _ipc_peer_impl* _conv_peer(struct ipc_peer* pr)
 {
 	return (struct _ipc_peer_impl*)((unsigned long)pr - (unsigned long)&(((struct _ipc_peer_impl*)(0))->_the_peer));
 }
 
+static inline long _ipc_try_restore_zone(void)
+{
+	if(!__the_ipc_zone)
+	{
+		__the_ipc_zone = mm_search_zone(IPC_ZONE_NAME);
+		if(!__the_ipc_zone)
+		{
+			__the_ipc_zone = mm_zcreate(IPC_ZONE_NAME, sizeof(struct _ipc_peer_impl));
+			if(!__the_ipc_zone) goto error_ret;
+		}
+		else
+		{
+			if(__the_ipc_zone->obj_size != sizeof(struct _ipc_peer_impl))
+				goto error_ret;
+		}
+	}
 
-struct ipc_peer* ipc_create(int channel_id, long buffer_size, long use_huge_tlb)
+	return 0;
+error_ret:
+	return -1;
+
+}
+
+struct ipc_peer* ipc_create(int channel_id, unsigned long buffer_size, int use_huge_tlb)
 {
 	long rslt;
+	int shmm_key;
+	void* addr_begin;
+	void* addr_end;
 	struct _ipc_peer_impl* ipi = 0;
+	union shmm_sub_key sub_key;
 
-	if(channel_id <= 0 || buffer_size <= 0)
+	if(channel_id < 0 || buffer_size == 0)
 		goto error_ret;
 
-//	ipi = malloc(sizeof(struct _ipc_peer_impl));
-//	if(!ipi) goto error_ret;
-//
-//	ipi->_shb = shmm_create(channel_id, 0, buffer_size, use_huge_tlb);
-//	if(!ipi->_shb) goto error_ret;
-//
-//	rslt = rbuf_new(ipi->_shb->addr_begin, ipi->_shb->addr_end - ipi->_shb->addr_begin);
-//	if(rslt < 0) goto error_ret;
-//
-//	ipi->_rb = rbuf_open(ipi->_shb->addr_begin);
-//	if(!ipi->_rb) goto error_ret;
-//
-//	ipi->_the_peer.channel_id = channel_id;
-//	ipi->_the_peer.buffer_size = buffer_size;
+	rslt = _ipc_try_restore_zone();
+	if(rslt < 0) goto error_ret;
+
+	ipi = mm_zalloc(__the_ipc_zone);
+	if(!ipi) goto error_ret;
+
+	sub_key.ipc_channel = channel_id;
+
+	shmm_key = mm_create_shm_key(MM_SHM_IPC, 0, &sub_key);
+	if(shmm_key < 0) goto error_ret;
+
+	ipi->_shb = shmm_create(shmm_key, 0, buffer_size, use_huge_tlb);
+	if(!ipi->_shb) goto error_ret;
+
+	addr_begin = shmm_begin_addr(ipi->_shb);
+	addr_end = shmm_end_addr(ipi->_shb);
+
+	ipi->_rb = rbuf_create(addr_begin, addr_end - addr_begin);
+	if(!ipi->_rb) goto error_ret;
+
+	ipi->_the_peer.channel_id = channel_id;
+	ipi->_the_peer.buffer_size = addr_end - addr_begin;
 
 	return &ipi->_the_peer;
 error_ret:
 	if(ipi)
 	{
-//		if(ipi->_rb)
-//		{
-//			rbuf_close(&ipi->_rb);
-//			rbuf_del(&ipi->_rb);
-//		}
-//		if(ipi->_shb)
-//		{
-//			shmm_close(ipi->_shb);
-//			shmm_destroy(ipi->_shb);
-//		}
-//
-//		free(ipi);
+		if(ipi->_rb)
+			rbuf_destroy(ipi->_rb);
+		if(ipi->_shb)
+			shmm_destroy(ipi->_shb);
+
+		mm_zfree(__the_ipc_zone, ipi);
 	}
 	return 0;
 }
@@ -62,41 +96,55 @@ error_ret:
 struct ipc_peer* ipc_link(int channel_id)
 {
 	long rslt;
+	int shmm_key;
+	void* addr_begin;
+	void* addr_end;
 	struct _ipc_peer_impl* ipi = 0;
+	union shmm_sub_key sub_key;
 
-//	if(channel_id <= 0)
-//		goto error_ret;
-//
-//	ipi = malloc(sizeof(struct _ipc_peer_impl));
-//	if(!ipi) goto error_ret;
-//
-//	ipi->_shb = shmm_open(channel_id, 0);
-//	if(!ipi->_shb) goto error_ret;
-//
-//	ipi->_rb = rbuf_open(ipi->_shb->addr_begin);
-//	if(!ipi->_rb) goto error_ret;
-//
-//	ipi->_the_peer.channel_id = channel_id;
-//	ipi->_the_peer.buffer_size = ipi->_rb->size;
+	if(channel_id < 0)
+		goto error_ret;
+
+	rslt = _ipc_try_restore_zone();
+	if(rslt < 0) goto error_ret;
+
+	ipi = mm_zalloc(__the_ipc_zone);
+	if(!ipi) goto error_ret;
+
+	sub_key.ipc_channel = channel_id;
+
+	shmm_key = mm_create_shm_key(MM_SHM_IPC, 0, &sub_key);
+	if(shmm_key < 0) goto error_ret;
+
+	ipi->_shb = shmm_open(shmm_key, 0);
+	if(!ipi->_shb) goto error_ret;
+
+	addr_begin = shmm_begin_addr(ipi->_shb);
+	addr_end = shmm_end_addr(ipi->_shb);
+
+	ipi->_rb = rbuf_create(addr_begin, addr_end - addr_begin);
+	if(!ipi->_rb) goto error_ret;
+
+	ipi->_the_peer.channel_id = channel_id;
+	ipi->_the_peer.buffer_size = addr_end - addr_begin;
 
 	return &ipi->_the_peer;
 error_ret:
 	if(ipi)
 	{
-//		if(ipi->_rb)
-//			rbuf_close(&ipi->_rb);
-//		if(ipi->_shb)
-//			shmm_close(ipi->_shb);
+		if(ipi->_rb)
+			rbuf_destroy(ipi->_rb);
+		if(ipi->_shb)
+			shmm_close(ipi->_shb);
 
-		free(ipi);
+		mm_zfree(__the_ipc_zone, ipi);
 	}
-
 	return 0;
 }
 
-long ipc_unlink(struct ipc_peer** pr)
+long ipc_unlink(struct ipc_peer* pr)
 {
-	struct _ipc_peer_impl* ipi = _conv_peer(*pr);
+	struct _ipc_peer_impl* ipi = _conv_peer(pr);
 //	if(!ipi) goto error_ret;
 
 //	if(!ipi->_rb || !ipi->_shb)
@@ -117,9 +165,9 @@ error_ret:
 }
 
 
-long ipc_destroy(struct ipc_peer** pr)
+long ipc_destroy(struct ipc_peer* pr)
 {
-	struct _ipc_peer_impl* ipi = _conv_peer(*pr);
+	struct _ipc_peer_impl* ipi = _conv_peer(pr);
 	if(!ipi) goto error_ret;
 
 //	if(!ipi->_rb || !ipi->_shb)

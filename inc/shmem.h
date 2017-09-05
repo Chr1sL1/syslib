@@ -6,13 +6,10 @@
 
 #define MAX_SHMM_NAME_LEN (255)
 
-typedef void* (*shmm_alloc_func)(unsigned long);
-typedef long (*shmm_free_func)(void*);
-
 struct shmm_blk
 {
-	void* addr_begin;
-	void* addr_end;
+	unsigned long addr_begin_offset;
+	unsigned long addr_end_offset;
 
 	struct rbnode rb_node;
 	struct dlnode lst_node;
@@ -25,4 +22,8 @@ struct shmm_blk* shmm_open_raw(int key, void* at_addr);
 long shmm_close(struct shmm_blk* shm);
 long shmm_destroy(struct shmm_blk* shm);
 
+void* shmm_begin_addr(struct shmm_blk* shm);
+void* shmm_end_addr(struct shmm_blk* shm);
+
 #endif
+
