@@ -624,18 +624,13 @@ error_ret:
 	return -1;
 }
 
-long mm_save_globl_data(void* p, unsigned int size)
+inline void mm_save_globl_data(void* p)
 {
 	if(!__the_mmspace) goto error_ret;
 
-	__the_mmspace->_usr_globl = mm_area_alloc(size, MM_AREA_PERSIS);
-	if(!__the_mmspace->_usr_globl) goto error_ret;
-
-	memcpy(__the_mmspace->_usr_globl, p, size);
-
-	return 0;
+	__the_mmspace->_usr_globl = p;
 error_ret:
-	return -1;
+	return;
 }
 
 inline void* mm_load_globl_data(void)

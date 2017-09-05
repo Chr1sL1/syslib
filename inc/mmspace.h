@@ -51,7 +51,7 @@ struct mm_space_config
 long mm_initialize(struct mm_space_config* cfg);
 long mm_uninitialize(void);
 
-long mm_save_globl_data(void* p, unsigned int size);
+void mm_save_globl_data(void* p);
 void* mm_load_globl_data(void);
 
 struct mmzone* mm_search_zone(const char* zone_name);
