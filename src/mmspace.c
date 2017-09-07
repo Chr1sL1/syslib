@@ -605,6 +605,18 @@ error_ret:
 	return -1;
 }
 
+long mm_reinitialize(struct mm_space_config* cfg)
+{
+	long rslt = mm_initialize(cfg);
+	if(rslt < 0) goto error_ret;
+
+	mm_uninitialize();
+
+	return mm_initialize(cfg);
+error_ret:
+	return -1;
+}
+
 long mm_uninitialize(void)
 {
 	if(!__the_mmspace) goto error_ret;
@@ -618,6 +630,8 @@ long mm_uninitialize(void)
 	}
 
 	shmm_destroy(__the_mmspace->_this_shm);
+
+	__the_mmspace = 0;
 
 	return 0;
 error_ret:

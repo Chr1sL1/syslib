@@ -4,10 +4,10 @@
 #include <string.h>
 
 #define RING_BUF_TAG		(0x1212dbdb1212dbdb)
+#define RBUF_ZONE_NAME		"sys_ringbuf_zone"
 
 struct _ring_buf_impl
 {
-	unsigned long _rb_tag;
 	struct ring_buf _the_buf;
 
 	volatile long _r_offset;
@@ -21,22 +21,44 @@ static inline struct _ring_buf_impl* _conv_rb(struct ring_buf* rb)
 	return (struct _ring_buf_impl*)((unsigned long)rb - (unsigned long)&(((struct _ring_buf_impl*)(0))->_the_buf));
 }
 
+static inline long _rbuf_try_restore_zone(void)
+{
+	if(!__the_ring_buf_zone)
+	{
+		__the_ring_buf_zone = mm_search_zone(RBUF_ZONE_NAME);
+		if(!__the_ring_buf_zone)
+		{
+			__the_ring_buf_zone = mm_zcreate(RBUF_ZONE_NAME, sizeof(struct _ring_buf_impl));
+			if(!__the_ring_buf_zone) goto error_ret;
+		}
+		else
+		{
+			if(__the_ring_buf_zone->obj_size != sizeof(struct _ring_buf_impl))
+				goto error_ret;
+		}
+	}
+
+	return 0;
+error_ret:
+	return -1;
+
+}
+
 struct ring_buf* rbuf_create(void* addr, long size)
 {
+	long rslt;
 	struct _ring_buf_impl* rbi;
 
 	if(!addr || size <= sizeof(struct _ring_buf_impl)) goto error_ret;
 	if(((unsigned long)addr & 0x7) != 0) goto error_ret;
 	if((size & 0x7) != 0) goto error_ret;
 
-	if(!__the_ring_buf_zone)
-		__the_ring_buf_zone = mm_zcreate("sys_ringbuf", sizeof(struct _ring_buf_impl));
-	if(!__the_ring_buf_zone) goto error_ret;
+	rslt = _rbuf_try_restore_zone();
+	if(rslt < 0) goto error_ret;
 
 	rbi = mm_zalloc(__the_ring_buf_zone);
 	if(!rbi) goto error_ret;
 
-	rbi->_rb_tag = RING_BUF_TAG;
 	rbi->_r_offset = 0;
 	rbi->_w_offset = 0;
 
@@ -48,14 +70,27 @@ error_ret:
 	return 0;
 }
 
+inline long rbuf_reset(struct ring_buf* rbuf)
+{
+	struct _ring_buf_impl* rbi;
+
+	if(!rbuf) goto error_ret;
+	rbi = _conv_rb(rbuf);
+
+	rbi->_r_offset = 0;
+	rbi->_w_offset = 0;
+
+	return 0;
+error_ret:
+	return -1;
+}
+
 long rbuf_destroy(struct ring_buf* rbuf)
 {
 	struct _ring_buf_impl* rbi;
 	if(!rbuf) goto error_ret;
 
 	rbi = _conv_rb(rbuf);
-	if(rbi->_rb_tag != RING_BUF_TAG)
-		goto error_ret;
 
 	return mm_zfree(__the_ring_buf_zone, rbi);
 error_ret:
@@ -66,8 +101,11 @@ long rbuf_write_block(struct ring_buf* rbuf, const void* data, long datalen)
 {
 	long r_offset, w_offset;
 	long remain;
+	struct _ring_buf_impl* rbi;
 
-	struct _ring_buf_impl* rbi = _conv_rb(rbuf);
+	if(!rbuf) goto error_ret;
+
+	rbi = _conv_rb(rbuf);
 	if(rbi == 0 || rbi->_the_buf.addr_begin == 0) goto error_ret;
 
 	r_offset = rbi->_r_offset;

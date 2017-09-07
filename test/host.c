@@ -78,7 +78,8 @@ void signal_stop(int sig, siginfo_t* t, void* usr_data)
 {
 	struct mmpool* mp = (struct mmpool*)usr_data;
 	printf("------------------recvd signal------------------------\n");
-//	mmp_freelist_profile(mp);
+
+
 	printf("------------------signal end------------------------\n");
 	running = 0;
 }
@@ -1499,7 +1500,7 @@ long test_server(void)
 
 	sa.sa_sigaction = signal_stop;
 	sa.sa_flags = SA_SIGINFO;
-	sigaction(SIGINT, &sa, 0);
+	sigaction(SIGSEGV, &sa, 0);
 
 	net = internet_create(&cfg, &ops);
 	if(!net) goto error_ret;

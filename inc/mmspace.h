@@ -49,6 +49,7 @@ struct mm_space_config
 };
 
 long mm_initialize(struct mm_space_config* cfg);
+long mm_reinitialize(struct mm_space_config* cfg);
 long mm_uninitialize(void);
 
 void mm_save_globl_data(void* p);

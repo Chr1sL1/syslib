@@ -8,6 +8,7 @@ struct ring_buf
 };
 
 struct ring_buf* rbuf_create(void* addr, long size);
+long rbuf_reset(struct ring_buf* rbuf);
 long rbuf_destroy(struct ring_buf* rbuf);
 
 long rbuf_write_block(struct ring_buf* rb, const void* data, long datalen);
