@@ -75,7 +75,7 @@ struct utask* utsk_create(long stack_size, task_function tfunc)
 	if(!tfunc) goto error_ret;
 
 	if(!__utsk_zone)
-		__utsk_zone = mm_zcreate("sys_utsk", sizeof(struct _utask_impl));
+		__utsk_zone = mm_zcreate("sys_utsk", sizeof(struct _utask_impl), 0, 0);
 
 	tsk = mm_zalloc(__utsk_zone);
 	if(!tsk) goto error_ret;

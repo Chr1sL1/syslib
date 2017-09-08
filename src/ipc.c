@@ -28,7 +28,7 @@ static inline long _ipc_try_restore_zone(void)
 		__the_ipc_zone = mm_search_zone(IPC_ZONE_NAME);
 		if(!__the_ipc_zone)
 		{
-			__the_ipc_zone = mm_zcreate(IPC_ZONE_NAME, sizeof(struct _ipc_peer_impl));
+			__the_ipc_zone = mm_zcreate(IPC_ZONE_NAME, sizeof(struct _ipc_peer_impl), 0, 0);
 			if(!__the_ipc_zone) goto error_ret;
 		}
 		else

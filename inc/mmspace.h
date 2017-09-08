@@ -15,7 +15,10 @@ struct mmzone
 	unsigned int padding;
 };
 
-struct mmzone* mm_zcreate(const char* name, unsigned int obj_size);
+typedef void (*mmzone_obj_ctor)(void* obj_ptr);
+typedef void (*mmzone_obj_dtor)(void* obj_ptr);
+
+struct mmzone* mm_zcreate(const char* name, unsigned int obj_size, mmzone_obj_ctor* ctor, mmzone_obj_dtor* dtor);
 long mm_zdestroy(struct mmzone* mmz);
 
 void* mm_zalloc(struct mmzone* mmz);

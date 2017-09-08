@@ -28,7 +28,7 @@ static inline long _rbuf_try_restore_zone(void)
 		__the_ring_buf_zone = mm_search_zone(RBUF_ZONE_NAME);
 		if(!__the_ring_buf_zone)
 		{
-			__the_ring_buf_zone = mm_zcreate(RBUF_ZONE_NAME, sizeof(struct _ring_buf_impl));
+			__the_ring_buf_zone = mm_zcreate(RBUF_ZONE_NAME, sizeof(struct _ring_buf_impl), 0, 0);
 			if(!__the_ring_buf_zone) goto error_ret;
 		}
 		else

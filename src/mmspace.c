@@ -68,6 +68,9 @@ struct _mmzone_impl
 	unsigned long _cache_size;
 	unsigned long _obj_aligned_size;
 
+	mmzone_obj_ctor* _obj_ctor;
+	mmzone_obj_dtor* _obj_dtor;
+
 	struct dlist _full_slab_list;
 	struct dlist _empty_slab_list;
 	struct dlist _partial_slab_list;
@@ -286,7 +289,7 @@ error_ret:
 }
 
 
-struct mmzone* mm_zcreate(const char* name, unsigned int obj_size)
+struct mmzone* mm_zcreate(const char* name, unsigned int obj_size, mmzone_obj_ctor* ctor, mmzone_obj_dtor* dtor)
 {
 	long rslt;
 	unsigned long cache_size;
@@ -314,6 +317,9 @@ struct mmzone* mm_zcreate(const char* name, unsigned int obj_size)
 
 	mzi->_the_zone.obj_size = obj_size;
 	mzi->_cache_size = cache_size;
+
+	mzi->_obj_ctor = ctor;
+	mzi->_obj_dtor = dtor;
 
 	strncpy(mzi->_hash_node.hash_key, name, HASH_KEY_LEN);
 
@@ -368,6 +374,9 @@ void* mm_zalloc(struct mmzone* mmz)
 		_mm_zmove_cache(mc, &mzi->_empty_slab_list, &mzi->_partial_slab_list);
 	}
 
+	if(mzi->_obj_ctor)
+		(*mzi->_obj_ctor)(p);
+
 	return p;
 error_ret:
 	return 0;
@@ -379,6 +388,11 @@ long mm_zfree(struct mmzone* mmz, void* p)
 	long from_full;
 	struct _mm_cache* mc;
 	struct _mmzone_impl* mzi = _conv_zone_impl(mmz);
+
+	if(!p) goto error_ret;
+
+	if(mzi->_obj_dtor)
+		(*mzi->_obj_dtor)(p);
 
 	mc = _cache_of_obj(p);
 	if(!mc || _mm_zcache_empty(mc)) goto error_ret;

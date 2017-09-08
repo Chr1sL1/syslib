@@ -135,7 +135,7 @@ static inline long _net_try_restore_zones(void)
 		__the_acc_zone = mm_search_zone(NET_ACC_ZONE_NAME);
 		if(!__the_acc_zone)
 		{
-			__the_acc_zone = mm_zcreate(NET_ACC_ZONE_NAME, sizeof(struct _acc_impl));
+			__the_acc_zone = mm_zcreate(NET_ACC_ZONE_NAME, sizeof(struct _acc_impl), 0, 0);
 			if(!__the_acc_zone) goto error_ret;
 		}
 		else
@@ -150,7 +150,7 @@ static inline long _net_try_restore_zones(void)
 		__the_ses_zone = mm_search_zone(NET_SES_ZONE_NAME);
 		if(!__the_ses_zone)
 		{
-			__the_ses_zone = mm_zcreate(NET_SES_ZONE_NAME, sizeof(struct _ses_impl));
+			__the_ses_zone = mm_zcreate(NET_SES_ZONE_NAME, sizeof(struct _ses_impl), 0, 0);
 			if(!__the_ses_zone) goto error_ret;
 		}
 		else
@@ -165,7 +165,7 @@ static inline long _net_try_restore_zones(void)
 		__the_send_data_zone = mm_search_zone(NET_SEND_DATA_ZONE_NAME);
 		if(!__the_send_data_zone)
 		{
-			__the_send_data_zone = mm_zcreate(NET_SEND_DATA_ZONE_NAME, sizeof(struct _send_data_node));
+			__the_send_data_zone = mm_zcreate(NET_SEND_DATA_ZONE_NAME, sizeof(struct _send_data_node), 0, 0);
 			if(!__the_send_data_zone) goto error_ret;
 		}
 		else

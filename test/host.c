@@ -22,6 +22,7 @@
 #include <unistd.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <sys/wait.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
@@ -208,7 +209,7 @@ void tfun(struct utask* t, void* p)
 {
 	for(int i = 0; i < sizeof(test_arr) / sizeof(long); i++)
 	{
-		printf("arr[i] = %d\n", test_arr[i]);
+		printf("arr[i] = %ld\n", test_arr[i]);
 
 		if(i % 2 == 0)
 			utsk_yield(t);
@@ -235,7 +236,7 @@ void test_task(void)
 
 	for(int i = 0; i < sizeof(test_arr) / sizeof(long); i++)
 	{
-		printf("%d\n", test_arr[i]);
+		printf("%ld\n", test_arr[i]);
 		if(i % 3 == 0)
 		{
 			r1 = rdtsc();
@@ -1289,7 +1290,7 @@ void test_mm(void)
 	rslt = mm_initialize(&cfg);
 	if(rslt < 0) goto error_ret;
 
-	mmz = mm_zcreate("test_mm", 385);
+	mmz = mm_zcreate("test_mm", 385, 0, 0);
 	if(!mmz) goto error_ret;
 
 	mmz = mm_search_zone("test_mm");
