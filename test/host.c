@@ -1485,7 +1485,7 @@ long test_server(void)
 	struct net_config cfg;
 	struct net_ops ops;
 
-	struct internet* net;
+	struct net_struct* net;
 	struct acceptor* acc;
 	struct session* se_conn;
 	struct sigaction sa;

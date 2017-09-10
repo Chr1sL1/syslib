@@ -38,11 +38,11 @@ enum _SESSION_STATE
 
 struct _inet_impl
 {
-	struct internet _the_net;
-	struct epoll_event* _ep_ev;
+	struct net_struct _the_net;
 	struct dlist _acc_list;
 	struct dlist _ses_list;
 
+	struct epoll_event* _ep_ev;
 	int _epoll_fd;
 };
 
@@ -98,7 +98,7 @@ static void _net_on_send(struct _inet_impl* inet, struct _ses_impl* sei);
 static long _net_disconn(struct _inet_impl* inet, struct _ses_impl* sei);
 
 
-static inline struct _inet_impl* _conv_inet_impl(struct internet* inet)
+static inline struct _inet_impl* _conv_inet_impl(struct net_struct* inet)
 {
 	return (struct _inet_impl*)((unsigned long)inet - (unsigned long)&((struct _inet_impl*)(0))->_the_net);
 }
@@ -180,7 +180,7 @@ error_ret:
 	return -1;
 }
 
-struct internet* internet_create(const struct net_config* cfg, const struct net_ops* ops)
+struct net_struct* internet_create(const struct net_config* cfg, const struct net_ops* ops)
 {
 	long rslt;
 	struct _inet_impl* inet = 0;
@@ -222,7 +222,7 @@ error_ret:
 	return 0;
 }
 
-struct acceptor* internet_create_acceptor(struct internet* net, unsigned int ip, unsigned short port)
+struct acceptor* internet_create_acceptor(struct net_struct* net, unsigned int ip, unsigned short port)
 {
 	long rslt;
 	int sock_opt;
@@ -279,7 +279,7 @@ error_ret:
 	return 0;
 }
 
-long internet_destroy(struct internet* net)
+long internet_destroy(struct net_struct* net)
 {
 	struct dlnode *dln, *rmv_dln;
 	struct _inet_impl* inet;
@@ -422,6 +422,8 @@ static long _net_close(struct _ses_impl* sei)
 	struct dlnode* dln;
 
 	lst_remove(&sei->_inet->_ses_list, &sei->_lst_node);
+
+	epoll_ctl(sei->_inet->_epoll_fd, EPOLL_CTL_DEL, sei->_sock_fd, 0);
 
 	close(sei->_sock_fd);
 
@@ -617,9 +619,6 @@ static inline long _net_disconn(struct _inet_impl* inet, struct _ses_impl* sei)
 
 	shutdown(sei->_sock_fd, SHUT_RD);
 
-	rslt = epoll_ctl(inet->_epoll_fd, EPOLL_CTL_DEL, sei->_sock_fd, 0);
-	if(rslt < 0) goto error_ret;
-
 	sei->_state = _SES_CLOSING;
 	_net_try_send_all(sei);
 
@@ -641,7 +640,7 @@ error_ret:
 	return -1;
 }
 
-long internet_run(struct internet* net, int timeout)
+long internet_run(struct net_struct* net, int timeout)
 {
 	long rslt, cnt;
 	struct _inet_impl* inet;
@@ -679,7 +678,7 @@ error_ret:
 
 }
 
-struct session* internet_connect(struct internet* net, unsigned int ip, unsigned short port)
+struct session* internet_connect(struct net_struct* net, unsigned int ip, unsigned short port)
 {
 	long rslt;
 	int new_sock;
@@ -740,7 +739,7 @@ error_ret:
 	return -1;
 }
 
-inline long internet_get_session_count(struct internet* net)
+inline long internet_get_session_count(struct net_struct* net)
 {
 	struct _inet_impl* inet;
 	if(!net) goto error_ret;
