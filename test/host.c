@@ -1473,6 +1473,8 @@ static long _test_server_on_conn(struct session* se)
 
 	internet_send(se, msg, strlen(msg) + 1);
 
+//	internet_disconnect(se);
+
 	return 0;
 }
 
@@ -1488,7 +1490,7 @@ long test_server(void)
 	struct session* se_conn;
 	struct sigaction sa;
 
-	cfg.max_conn_count = 1000;
+	cfg.max_conn_count = 200;
 	cfg.recv_buff_len = 100;
 	cfg.send_buff_len = 100;
 
@@ -1499,9 +1501,9 @@ long test_server(void)
 
 	running = 1;
 
-	sa.sa_sigaction = signal_stop;
-	sa.sa_flags = SA_SIGINFO;
-	sigaction(SIGSEGV, &sa, 0);
+//	sa.sa_sigaction = signal_stop;
+//	sa.sa_flags = SA_SIGINFO;
+//	sigaction(SIGSEGV, &sa, 0);
 
 	net = internet_create(&cfg, &ops);
 	if(!net) goto error_ret;
@@ -1520,7 +1522,7 @@ long test_server(void)
 		sops.func_recv = _test_server_on_recv_cli;
 		sops.func_disconn = 0;
 
-		se_conn = internet_connect(net, (unsigned int)inet_addr("192.168.1.3"), 7070);
+		se_conn = internet_connect(net, (unsigned int)inet_addr("192.168.2.164"), 7070);
 		if(!se_conn)
 		{
 			perror("connect failed.\n");
@@ -1532,12 +1534,14 @@ long test_server(void)
 
 	while(running)
 	{
-		rslt = internet_run(net);
+		rslt = internet_run(net, 1000);
 		if(rslt < 0)
 		{
 			perror("run failed.\n");
 			goto error_ret;
 		}
+
+		printf("session count: %ld.\n", internet_get_session_count(net));
 	}
 
 	return 0;
@@ -1562,7 +1566,7 @@ int main(void)
 	unsigned long seed = time(0);
 	srandom(seed);
 
-	rslt = init_mm(3);
+	rslt = init_mm(4);
 	if(rslt < 0) goto error_ret;
 
 	test_server();

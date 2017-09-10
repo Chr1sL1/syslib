@@ -383,23 +383,23 @@ static inline struct _ses_impl* _net_create_session(struct _inet_impl* inet, int
 	return sei;
 error_ret:
 	if(sei)
-	{
 		_net_close(sei);
-	}
 	return 0;
 }
 
 static long _net_on_acc(struct _inet_impl* inet, struct _acc_impl* aci)
 {
 	long rslt;
-	int new_sock, sock_opt;
+	int new_sock = 0;
 	socklen_t addr_len = 0;
 	struct sockaddr_in remote_addr;
 	struct _ses_impl* sei = 0;
-	struct epoll_event ev;
 
 	new_sock = accept4(aci->_sock_fd, (struct sockaddr*)&remote_addr, &addr_len, 0);
 	if(new_sock < 0) goto error_ret;
+
+	if(inet->_ses_list.size >= inet->_the_net.cfg.max_conn_count)
+		goto error_ret;
 
 	sei = _net_create_session(inet, new_sock);
 	if(!sei) goto error_ret;
@@ -412,12 +412,16 @@ static long _net_on_acc(struct _inet_impl* inet, struct _acc_impl* aci)
 
 	return 0;
 error_ret:
+	if(new_sock > 0)
+		close(new_sock);
 	return -1;
 }
 
 static long _net_close(struct _ses_impl* sei)
 {
 	struct dlnode* dln;
+
+	lst_remove(&sei->_inet->_ses_list, &sei->_lst_node);
 
 	close(sei->_sock_fd);
 
@@ -637,7 +641,7 @@ error_ret:
 	return -1;
 }
 
-long internet_run(struct internet* net)
+long internet_run(struct internet* net, int timeout)
 {
 	long rslt, cnt;
 	struct _inet_impl* inet;
@@ -646,7 +650,7 @@ long internet_run(struct internet* net)
 	if(!net) goto error_ret;
 	inet = _conv_inet_impl(net);
 
-	cnt = epoll_wait(inet->_epoll_fd, inet->_ep_ev, inet->_the_net.cfg.max_conn_count, -1);
+	cnt = epoll_wait(inet->_epoll_fd, inet->_ep_ev, inet->_the_net.cfg.max_conn_count, timeout);
 	if(cnt < 0) goto error_ret;
 
 	for(long i = 0; i < cnt; ++i)
@@ -654,8 +658,7 @@ long internet_run(struct internet* net)
 		unsigned int type_info = *(unsigned int*)(inet->_ep_ev[i].data.ptr);
 		if(type_info == ACC_TYPE_INFO)
 		{
-			rslt = _net_on_acc(inet, (struct _acc_impl*)inet->_ep_ev[i].data.ptr);
-			if(rslt < 0) goto error_ret;
+			_net_on_acc(inet, (struct _acc_impl*)inet->_ep_ev[i].data.ptr);
 		}
 		else if(type_info == SES_TYPE_INFO)
 		{
@@ -733,6 +736,18 @@ inline long internet_bind_session_ops(struct session* ses, const struct session_
 	}
 
 	return 0;
+error_ret:
+	return -1;
+}
+
+inline long internet_get_session_count(struct internet* net)
+{
+	struct _inet_impl* inet;
+	if(!net) goto error_ret;
+
+	inet = _conv_inet_impl(net);
+
+	return inet->_ses_list.size;
 error_ret:
 	return -1;
 }

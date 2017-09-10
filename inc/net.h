@@ -57,9 +57,10 @@ struct session* internet_connect(struct internet* net, unsigned int ip, unsigned
 long internet_disconnect(struct session* ses);
 
 long internet_send(struct session* ses, const char* data, int data_len);
-long internet_run(struct internet* net);
+long internet_run(struct internet* net, int timeout);
 
 long internet_bind_session_ops(struct session* ses, const struct session_ops* ops);
+long internet_get_session_count(struct internet* net);
 
 
 #endif
