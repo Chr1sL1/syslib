@@ -20,11 +20,19 @@ typedef long (*on_conn_func)(struct session* se);
 typedef long (*on_disconn_func)(struct session* se);
 typedef long (*on_recv_func)(struct session* se, const void* buf, long len);
 
+enum NET_TYPE
+{
+	NT_INTERNET,
+	NT_INTRANET,
+
+	NT_COUNT,
+};
+
 struct net_config
 {
 	unsigned int send_buff_len;
 	unsigned int recv_buff_len;
-	unsigned int max_conn_count;
+	unsigned int max_fd_count;
 };
 
 struct net_ops
@@ -37,6 +45,7 @@ struct net_ops
 
 struct session_ops
 {
+	on_conn_func func_conn;
 	on_recv_func func_recv;
 	on_disconn_func func_disconn;
 };
@@ -47,20 +56,20 @@ struct net_struct
 	struct net_ops ops;
 };
 
-struct net_struct* internet_create(const struct net_config* cfg, const struct net_ops* ops);
-long internet_destroy(struct net_struct* net);
+struct net_struct* net_create(const struct net_config* cfg, const struct net_ops* ops, int net_type);
+long net_destroy(struct net_struct* net);
 
-struct acceptor* internet_create_acceptor(struct net_struct* net, unsigned int ip, unsigned short port);
-long internet_destroy_acceptor(struct acceptor* acc);
+struct acceptor* net_create_acceptor(struct net_struct* net, unsigned int ip, unsigned short port);
+long net_destroy_acceptor(struct acceptor* acc);
 
-struct session* internet_connect(struct net_struct* net, unsigned int ip, unsigned short port);
-long internet_disconnect(struct session* ses);
+struct session* net_connect(struct net_struct* net, unsigned int ip, unsigned short port);
+long net_disconnect(struct session* ses);
 
-long internet_send(struct session* ses, const char* data, int data_len);
-long internet_run(struct net_struct* net, int timeout);
+long net_send(struct session* ses, const char* data, int data_len);
+long net_run(struct net_struct* net, int timeout);
 
-long internet_bind_session_ops(struct session* ses, const struct session_ops* ops);
-long internet_get_session_count(struct net_struct* net);
+long net_bind_session_ops(struct session* ses, const struct session_ops* ops);
+long net_session_count(struct net_struct* net);
 
 
 #endif
