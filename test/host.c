@@ -1427,7 +1427,7 @@ int main(void)
 	unsigned long seed = time(0);
 	srandom(seed);
 
-	rslt = init_mm(14);
+	rslt = init_mm(15);
 	if(rslt < 0) goto error_ret;
 
 	net_test_server();

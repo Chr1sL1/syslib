@@ -52,7 +52,7 @@ typedef struct _acc_impl* (*_nt_create_acc_func)(struct _inet_impl* inet, unsign
 typedef long (*_nt_destroy_acc_func)(struct _acc_impl* aci);
 
 typedef struct _ses_impl* (*_nt_create_session_func)(struct _inet_impl* inet, int socket_fd);
-typedef long (*_nt_close_session_func)(struct _ses_impl* sei);
+typedef long (*_nt_disconn_func)(struct _ses_impl* sei);
 
 typedef long (*_nt_run_func)(struct _inet_impl* inet, int timeout);
 
@@ -68,7 +68,7 @@ struct _nt_ops
 	_nt_destroy_acc_func __destroy_acc_func;
 
 	_nt_create_session_func __create_ses_func;
-	_nt_close_session_func __close_ses_func;
+	_nt_disconn_func __disconn_func;
 
 	_nt_run_func __run_func;
 
@@ -141,6 +141,12 @@ struct _send_data_node
 	int _data_sent;
 };
 
+static struct linger __linger_option =
+{
+	.l_onoff = 1,
+	.l_linger = 4,
+};
+
 static struct mmzone* __the_acc_zone = 0;
 static struct mmzone* __the_ses_zone = 0;
 static struct mmzone* __the_send_data_zone = 0;
@@ -160,8 +166,8 @@ static long _intranet_destroy_acceptor(struct _acc_impl* aci);
 static struct _ses_impl* _internet_create_session(struct _inet_impl* inet, int socket_fd);
 static struct _ses_impl* _intranet_create_session(struct _inet_impl* inet, int socket_fd);
 
-static long _internet_close(struct _ses_impl* sei);
-static long _intranet_close(struct _ses_impl* sei);
+static long _internet_disconn(struct _ses_impl* sei);
+static long _intranet_disconn(struct _ses_impl* sei);
 
 static long _internet_run(struct _inet_impl* inet, int timeout);
 static long _intranet_run(struct _inet_impl* inet, int timeout);
@@ -189,7 +195,7 @@ struct _nt_ops __net_ops[NT_COUNT] =
 		.__destroy_acc_func = _internet_destroy_acceptor,
 
 		.__create_ses_func = _internet_create_session,
-		.__close_ses_func = _internet_close,
+		.__disconn_func = _internet_disconn,
 		.__run_func = _internet_run,
 		.__set_outbit_func = 0,
 		.__clr_outbit_func = 0,
@@ -204,7 +210,7 @@ struct _nt_ops __net_ops[NT_COUNT] =
 		.__destroy_acc_func = _intranet_destroy_acceptor,
 
 		.__create_ses_func = _intranet_create_session,
-		.__close_ses_func = _intranet_close,
+		.__disconn_func = _intranet_disconn,
 		.__run_func = _intranet_run,
 
 		.__set_outbit_func = _set_outbit,
@@ -243,6 +249,39 @@ static inline struct _send_data_node* _conv_send_data_dln(struct dlnode* dln)
 	return (struct _send_data_node*)((unsigned long)dln - (unsigned long)&((struct _send_data_node*)(0))->_lst_node);
 }
 
+static void _sei_ctor(void* ptr)
+{
+	struct _ses_impl* sei = (struct _ses_impl*)ptr;
+
+	sei->_sock_fd = 0;
+	sei->_inet = 0;
+	sei->_the_ses.remote_ip = 0;
+	sei->_the_ses.remote_port = 0;
+	sei->_the_ses.usr_ptr = 0;
+
+	lst_clr(&sei->_lst_node);
+	lst_new(&sei->_send_list);
+
+	sei->_ops.func_conn = 0;
+	sei->_ops.func_recv = 0;
+	sei->_ops.func_disconn = 0;
+
+	sei->_recv_buf_len = 0;
+	sei->_bytes_recv = 0;
+
+	sei->_po_idx = 0;
+	sei->_state = _SES_INVALID;
+	sei->_type_info = SES_TYPE_INFO;
+}
+
+static void _sei_dtor(void* ptr)
+{
+	struct _ses_impl* sei = (struct _ses_impl*)ptr;
+
+	if(sei->_recv_buf)
+		mm_free(sei->_recv_buf);
+}
+
 static inline long _net_try_restore_zones(void)
 {
 	if(!__the_acc_zone)
@@ -251,12 +290,11 @@ static inline long _net_try_restore_zones(void)
 		if(!__the_acc_zone)
 		{
 			__the_acc_zone = mm_zcreate(NET_ACC_ZONE_NAME, sizeof(struct _acc_impl), 0, 0);
-			if(!__the_acc_zone) goto error_ret;
+			err_exit(!__the_acc_zone, "restore acc zone failed.");
 		}
 		else
 		{
-			if(__the_acc_zone->obj_size != sizeof(struct _acc_impl))
-				goto error_ret;
+			err_exit(__the_acc_zone->obj_size != sizeof(struct _acc_impl), "acc zone data error.");
 		}
 	}
 
@@ -265,13 +303,12 @@ static inline long _net_try_restore_zones(void)
 		__the_ses_zone = mm_search_zone(NET_SES_ZONE_NAME);
 		if(!__the_ses_zone)
 		{
-			__the_ses_zone = mm_zcreate(NET_SES_ZONE_NAME, sizeof(struct _ses_impl), 0, 0);
-			if(!__the_ses_zone) goto error_ret;
+			__the_ses_zone = mm_zcreate(NET_SES_ZONE_NAME, sizeof(struct _ses_impl), _sei_ctor, _sei_dtor);
+			err_exit(!__the_ses_zone, "restore ses zone failed.");
 		}
 		else
 		{
-			if(__the_ses_zone->obj_size != sizeof(struct _ses_impl))
-				goto error_ret;
+			err_exit(__the_ses_zone->obj_size != sizeof(struct _ses_impl), "ses zone data error.");
 		}
 	}
 
@@ -281,12 +318,11 @@ static inline long _net_try_restore_zones(void)
 		if(!__the_send_data_zone)
 		{
 			__the_send_data_zone = mm_zcreate(NET_SEND_DATA_ZONE_NAME, sizeof(struct _send_data_node), 0, 0);
-			if(!__the_send_data_zone) goto error_ret;
+			err_exit(!__the_send_data_zone, "restore send data zone failed.");
 		}
 		else
 		{
-			if(__the_send_data_zone->obj_size != sizeof(struct _send_data_node))
-				goto error_ret;
+			err_exit(__the_send_data_zone->obj_size != sizeof(struct _send_data_node), "send data zone data error.");
 		}
 	}
 
@@ -388,7 +424,7 @@ static long _net_destroy(struct _inet_impl* inet)
 		rmv_dln = dln;
 		dln = dln->next;
 
-		(*inet->_handler->__close_ses_func)(sei);
+		_net_close(sei);
 
 		lst_remove(&inet->_acc_list, rmv_dln);
 	}
@@ -577,20 +613,15 @@ static struct _ses_impl* _net_create_session(struct _inet_impl* inet, int socket
 	sei = mm_zalloc(__the_ses_zone);
 	if(!sei) goto error_ret;
 
-	sei->_state = _SES_INVALID;
-	sei->_recv_buf = 0;
-
-	lst_clr(&sei->_lst_node);
-	lst_new(&sei->_send_list);
-
 	sei->_sock_fd = socket_fd;
 	sei->_inet = inet;
-	sei->_type_info = SES_TYPE_INFO;
 
 	sock_opt = 1;
 	rslt = setsockopt(sei->_sock_fd, SOL_SOCKET, SO_KEEPALIVE, &sock_opt, sizeof(int));
 	rslt = setsockopt(sei->_sock_fd, SOL_SOCKET, SO_RCVBUF, &inet->_the_net.cfg.recv_buff_len, sizeof(int));
 	rslt = setsockopt(sei->_sock_fd, SOL_SOCKET, SO_SNDBUF, &inet->_the_net.cfg.send_buff_len, sizeof(int));
+//	rslt = setsockopt(sei->_sock_fd, SOL_SOCKET, SO_LINGER, &__linger_option, sizeof(struct linger));
+
 
 	sei->_recv_buf_len = inet->_the_net.cfg.recv_buff_len;
 	sei->_recv_buf = mm_alloc(sei->_recv_buf_len);
@@ -655,7 +686,7 @@ struct net_struct* net_create(const struct net_config* cfg, const struct net_ops
 {
 	long rslt;
 	struct _inet_impl* inet;
-	struct sigaction act;
+//	struct sigaction act;
 
 	if(!cfg || !ops) goto error_ret;
 
@@ -668,8 +699,10 @@ struct net_struct* net_create(const struct net_config* cfg, const struct net_ops
 	rslt = (*inet->_handler->__init_func)(inet);
 	if(rslt < 0) goto error_ret;
 
-	act.sa_handler = SIG_IGN;
-	sigaction(SIGPIPE, &act, 0);
+	signal(SIGPIPE, SIG_IGN);
+
+//	act.sa_handler = SIG_IGN;
+//	sigaction(SIGPIPE, &act, 0);
 
 	return &inet->_the_net;
 error_ret:
@@ -760,9 +793,13 @@ static long _net_close(struct _ses_impl* sei)
 	err_exit(rslt < 0, "_net_close error.");
 
 	close(sei->_sock_fd);
+	sei->_sock_fd = 0;
 
 	if(sei->_recv_buf)
+	{
 		mm_free(sei->_recv_buf);
+		sei->_recv_buf = 0;
+	}
 
 	if(!lst_empty(&sei->_send_list))
 	{
@@ -783,26 +820,6 @@ static long _net_close(struct _ses_impl* sei)
 	return mm_zfree(__the_ses_zone, sei);
 error_ret:
 	return -1;
-}
-
-static long _internet_close(struct _ses_impl* sei)
-{
-	epoll_ctl(sei->_inet->_epoll_fd, EPOLL_CTL_DEL, sei->_sock_fd, 0);
-	return _net_close(sei);
-}
-
-static long _intranet_close(struct _ses_impl* sei)
-{
-	struct _inet_impl* inet = sei->_inet;
-
-	if(inet->_po_fds[sei->_po_idx].fd == sei->_sock_fd && inet->_po_obj[sei->_po_idx] == sei)
-	{
-		inet->_po_fds[sei->_po_idx].fd = 0;
-		inet->_po_fds[sei->_po_idx].events = 0;
-		inet->_po_obj[sei->_po_idx] = 0;
-	}
-
-	return _net_close(sei);
 }
 
 static void _net_on_recv(struct _ses_impl* sei)
@@ -860,6 +877,7 @@ error_ret:
 
 static inline void _net_on_error(struct _ses_impl* sei)
 {
+	printf("_net_on_error.\n");
 	_net_disconn(sei);
 }
 
@@ -906,7 +924,8 @@ static long _net_try_send_all(struct _ses_impl* sei)
 	if(sei->_state == _SES_CLOSING)
 	{
 		if(lst_empty(&sei->_send_list))
-			(*inet->_handler->__close_ses_func)(sei);
+//			(*inet->_handler->__close_ses_func)(sei);
+			_net_close(sei);
 	}
 	else
 	{
@@ -924,7 +943,7 @@ send_finish:
 send_succ:
 	return 0;
 error_ret:
-	(*inet->_handler->__close_ses_func)(sei);
+	_net_close(sei);
 	return -1;
 }
 
@@ -992,6 +1011,26 @@ error_ret:
 	return -1;
 }
 
+static long _internet_disconn(struct _ses_impl* sei)
+{
+	epoll_ctl(sei->_inet->_epoll_fd, EPOLL_CTL_DEL, sei->_sock_fd, 0);
+	return 0;
+}
+
+static long _intranet_disconn(struct _ses_impl* sei)
+{
+	struct _inet_impl* inet = sei->_inet;
+
+	if(inet->_po_fds[sei->_po_idx].fd == sei->_sock_fd && inet->_po_obj[sei->_po_idx] == sei)
+	{
+		inet->_po_fds[sei->_po_idx].fd = 0;
+		inet->_po_fds[sei->_po_idx].events = 0;
+		inet->_po_obj[sei->_po_idx] = 0;
+	}
+
+	return 0;
+}
+
 static inline long _net_disconn(struct _ses_impl* sei)
 {
 	long rslt;
@@ -1010,6 +1049,9 @@ static inline long _net_disconn(struct _ses_impl* sei)
 
 	sei->_state = _SES_CLOSING;
 	_net_try_send_all(sei);
+
+	if(inet->_handler->__disconn_func)
+		(*inet->_handler->__disconn_func)(sei);
 
 	return 0;
 error_ret:

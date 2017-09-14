@@ -20,7 +20,8 @@ static struct mmzone* __usr_session_zone = 0;
 static long __running = 1;
 static unsigned long __time_val = 0;
 
-static unsigned long __recv_bytes = 0;
+static unsigned long __recv_bytes_server = 0;
+static unsigned long __recv_bytes_client = 0;
 static unsigned long __send_bytes = 0;
 
 enum USR_SESSION_STATE
@@ -138,7 +139,9 @@ error_ret:
 
 static long on_server_recv(struct session* se, const void* buf, long len)
 {
-	__recv_bytes += len;
+	__recv_bytes_server += len;
+
+//	net_send(se, buf, len);
 
 	return 0;
 error_ret:
@@ -148,6 +151,7 @@ error_ret:
 
 static long on_client_recv(struct session* se, const void* buf, long len)
 {
+	__recv_bytes_client += len;
 
 	return 0;
 error_ret:
@@ -201,8 +205,11 @@ static long run_connector(struct net_struct* net)
 		.func_recv = on_client_recv,
 		.func_disconn = on_client_disconn,
 	};
+	unsigned long r1 = 0, r2 = 0;
 
 	char send_buf[net->cfg.send_buff_len];
+
+	r1 = rdtsc();
 
 	for(int i = 0; i < TEST_CONN_COUNT; ++i)
 	{
@@ -213,7 +220,7 @@ static long run_connector(struct net_struct* net)
 
 			__conn_session[i].idx = i;
 
-			struct session* s = net_connect(net, inet_addr("192.168.1.3"), 7070);
+			struct session* s = net_connect(net, inet_addr("192.168.2.164"), 7070);
 			err_exit(!s, "connect failed [%d]", i);
 
 			net_bind_session_ops(s, &ops);
@@ -237,6 +244,10 @@ static long run_connector(struct net_struct* net)
 			__send_bytes += (net->cfg.send_buff_len - 1);
 		}
 	}
+
+	r2 = rdtsc();
+
+//	printf("run_connector cycle: %lu\n", r2 - r1);
 
 	return 0;
 error_ret:
@@ -289,7 +300,8 @@ long net_test_server(void)
 		if(__time_val > count_tick + 500)
 		{
 			count_tick = __time_val;
-			printf(">>>>>>>>>>>>>>>>>>>>>> session count: %lu, recvd bytes: %lu.\n", net_session_count(net), __recv_bytes);
+			printf(">>>>>>>>>>>>>>>>>>>>>> session count: %lu, server recvd bytes: %lu, client recvd bytes: %lu.\n",
+					net_session_count(net), __recv_bytes_server, __recv_bytes_client);
 		}
 	}
 
