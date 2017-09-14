@@ -2,6 +2,7 @@
 #include "mmspace.h"
 #include "ringbuf.h"
 #include "dlist.h"
+#include "misc.h"
 
 #ifdef __linux__
 #define _GNU_SOURCE
@@ -55,6 +56,9 @@ typedef long (*_nt_close_session_func)(struct _ses_impl* sei);
 
 typedef long (*_nt_run_func)(struct _inet_impl* inet, int timeout);
 
+typedef void (*_nt_set_outbit_func)(struct _inet_impl* inet, struct _ses_impl* sei);
+typedef void (*_nt_clr_outbit_func)(struct _inet_impl* inet, struct _ses_impl* sei);
+
 struct _nt_ops
 {
 	_nt_init_func __init_func;
@@ -67,6 +71,9 @@ struct _nt_ops
 	_nt_close_session_func __close_ses_func;
 
 	_nt_run_func __run_func;
+
+	_nt_set_outbit_func __set_outbit_func;
+	_nt_clr_outbit_func __clr_outbit_func;
 };
 
 struct _inet_impl
@@ -159,6 +166,9 @@ static long _intranet_close(struct _ses_impl* sei);
 static long _internet_run(struct _inet_impl* inet, int timeout);
 static long _intranet_run(struct _inet_impl* inet, int timeout);
 
+static void _set_outbit(struct _inet_impl* inet, struct _ses_impl* sei);
+static void _clr_outbit(struct _inet_impl* inet, struct _ses_impl* sei);
+
 static long _internet_on_acc(struct _acc_impl* aci);
 static long _net_close(struct _ses_impl* sei);
 static void _net_on_recv(struct _ses_impl* sei);
@@ -181,6 +191,9 @@ struct _nt_ops __net_ops[NT_COUNT] =
 		.__create_ses_func = _internet_create_session,
 		.__close_ses_func = _internet_close,
 		.__run_func = _internet_run,
+		.__set_outbit_func = 0,
+		.__clr_outbit_func = 0,
+
 	},
 
 	[NT_INTRANET] = {
@@ -193,6 +206,9 @@ struct _nt_ops __net_ops[NT_COUNT] =
 		.__create_ses_func = _intranet_create_session,
 		.__close_ses_func = _intranet_close,
 		.__run_func = _intranet_run,
+
+		.__set_outbit_func = _set_outbit,
+		.__clr_outbit_func = _clr_outbit,
 	},
 };
 
@@ -736,10 +752,12 @@ error_ret:
 
 static long _net_close(struct _ses_impl* sei)
 {
+	long rslt;
 	struct dlnode* dln;
 	struct _inet_impl* inet = sei->_inet;
 
-	lst_remove(&sei->_inet->_ses_list, &sei->_lst_node);
+	rslt = lst_remove(&sei->_inet->_ses_list, &sei->_lst_node);
+	err_exit(rslt < 0, "_net_close error.");
 
 	close(sei->_sock_fd);
 
@@ -763,6 +781,8 @@ static long _net_close(struct _ses_impl* sei)
 	sei->_state = _SES_CLOSED;
 
 	return mm_zfree(__the_ses_zone, sei);
+error_ret:
+	return -1;
 }
 
 static long _internet_close(struct _ses_impl* sei)
@@ -843,6 +863,15 @@ static inline void _net_on_error(struct _ses_impl* sei)
 	_net_disconn(sei);
 }
 
+static void _set_outbit(struct _inet_impl* inet, struct _ses_impl* sei)
+{
+	inet->_po_fds[sei->_po_idx].events |= POLLOUT;
+}
+
+static void _clr_outbit(struct _inet_impl* inet, struct _ses_impl* sei)
+{
+	inet->_po_fds[sei->_po_idx].events &= ~(POLLOUT);
+}
 
 static long _net_try_send_all(struct _ses_impl* sei)
 {
@@ -887,7 +916,8 @@ send_finish:
 			if(errno != EWOULDBLOCK && errno != EAGAIN)
 				goto error_ret;
 
-			inet->_po_fds[sei->_po_idx].events |= POLLOUT;
+		if(inet->_handler->__set_outbit_func)
+			(*inet->_handler->__set_outbit_func)(inet, sei);
 		}
 	}
 
@@ -909,9 +939,11 @@ static inline void _net_on_send(struct _ses_impl* sei)
 
 		sei->_state = _SES_NORMAL;
 
-		cf(&sei->_the_ses);
+		if(cf)
+			(*cf)(&sei->_the_ses);
 
-		inet->_po_fds[sei->_po_idx].events &= ~(POLLOUT);
+		if(inet->_handler->__clr_outbit_func)
+			(*inet->_handler->__clr_outbit_func)(inet, sei);
 
 	}
 	_net_try_send_all(sei);
@@ -1144,11 +1176,13 @@ inline long net_bind_session_ops(struct session* ses, const struct session_ops* 
 
 	if(ops)
 	{
+		sei->_ops.func_conn = ops->func_conn;
 		sei->_ops.func_recv = ops->func_recv;
 		sei->_ops.func_disconn = ops->func_disconn;
 	}
 	else
 	{
+		sei->_ops.func_conn = 0;
 		sei->_ops.func_recv = 0;
 		sei->_ops.func_disconn = 0;
 	}

@@ -68,8 +68,8 @@ struct _mmzone_impl
 	unsigned long _cache_size;
 	unsigned long _obj_aligned_size;
 
-	mmzone_obj_ctor* _obj_ctor;
-	mmzone_obj_dtor* _obj_dtor;
+	mmzone_obj_ctor _obj_ctor;
+	mmzone_obj_dtor _obj_dtor;
 
 	struct dlist _full_slab_list;
 	struct dlist _empty_slab_list;
@@ -289,7 +289,7 @@ error_ret:
 }
 
 
-struct mmzone* mm_zcreate(const char* name, unsigned int obj_size, mmzone_obj_ctor* ctor, mmzone_obj_dtor* dtor)
+struct mmzone* mm_zcreate(const char* name, unsigned int obj_size, mmzone_obj_ctor ctor, mmzone_obj_dtor dtor)
 {
 	long rslt;
 	unsigned long cache_size;

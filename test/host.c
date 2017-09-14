@@ -1412,149 +1412,10 @@ error_ret:
 	return -1;
 }
 
-static long _test_server_on_acc(struct acceptor* acc, struct session* se)
-{
-	printf("accepted\n");
-	return 0;
-error_ret:
-	return -1;
-}
-
-static long _test_server_on_recv(struct session* se, const void* buf, long len)
-{
-	const char* echo = "helloooooooooooooooooooooooooooooo world!!!";
-	if(len <= 2)
-	{
-		net_send(se, echo, strlen(echo) + 1);
-		net_disconnect(se);
-	}
-	else
-	{
-		printf("recvd: %s, len: %ld\n", (char*)buf, len);
-		net_send(se, echo, strlen(echo) + 1);
-	}
-
-	return 0;
-error_ret:
-	return -1;
-}
-
-static long _test_server_on_recv_cli(struct session* se, const void* buf, long len)
-{
-	const char* echo = "due!";
-	if(len <= 2)
-	{
-		net_send(se, echo, strlen(echo) + 1);
-		net_disconnect(se);
-	}
-	else
-	{
-		printf("recvd: %s, len: %ld\n", (char*)buf, len);
-		net_send(se, echo, strlen(echo) + 1);
-		net_disconnect(se);
-	}
-
-	return 0;
-error_ret:
-	return -1;
-}
-
-
-static long _test_server_on_disconn(struct session* se)
-{
-	printf("disconnected.\n");
-
-	return 0;
-}
-
-static long _test_server_on_conn(struct session* se)
-{
-	const char* msg = "due.";
-	printf("connected.\n");
-
-	net_send(se, msg, strlen(msg) + 1);
-
-
-	return 0;
-}
-
-
-long test_server(void)
-{
-	long rslt = 0;
-	struct net_config cfg;
-	struct net_ops ops;
-
-	struct net_struct* net;
-	struct acceptor* acc;
-	struct session* se_conn;
-	struct sigaction sa;
-
-	cfg.max_fd_count = 200;
-	cfg.recv_buff_len = 100;
-	cfg.send_buff_len = 100;
-
-	ops.func_acc = _test_server_on_acc;
-	ops.func_recv = _test_server_on_recv;
-	ops.func_disconn = _test_server_on_disconn;
-	ops.func_conn = _test_server_on_conn;
-
-	running = 1;
-
-//	sa.sa_sigaction = signal_stop;
-//	sa.sa_flags = SA_SIGINFO;
-//	sigaction(SIGSEGV, &sa, 0);
-
-	net = net_create(&cfg, &ops, NT_INTRANET);
-	if(!net) goto error_ret;
-
-	acc = net_create_acceptor(net, 0, 7070);
-
-	if(!acc)
-	{
-		perror("accept failed.\n");
-		goto error_ret;
-	}
-
-//	for(int i = 0; i < cfg.max_fd_count / 2; i++)
-//	{
-//		struct session_ops sops;
-//		sops.func_recv = _test_server_on_recv_cli;
-//		sops.func_disconn = 0;
-//
-//		se_conn = net_connect(net, (unsigned int)inet_addr("192.168.1.3"), 7070);
-//		if(!se_conn)
-//		{
-//			perror("connect failed.\n");
-//			goto error_ret;
-//		}
-//
-//		net_bind_session_ops(se_conn, &sops);
-//	}
-
-	while(running)
-	{
-		rslt = net_run(net, -1);
-		if(rslt < 0)
-		{
-			perror("run failed.\n");
-			goto error_ret;
-		}
-
-		printf("session count: %ld.\n", net_session_count(net));
-	}
-
-	return 0;
-error_ret:
-	perror(strerror(errno));
-	if(net)
-		net_destroy(net);
-
-	return -1;
-}
-
-
 #define dbg(format, ...) printf(format, __VA_ARGS__)
+
+
+extern long net_test_server(void);
 
 int main(void)
 {
@@ -1566,10 +1427,10 @@ int main(void)
 	unsigned long seed = time(0);
 	srandom(seed);
 
-	rslt = init_mm(7);
+	rslt = init_mm(14);
 	if(rslt < 0) goto error_ret;
 
-	test_server();
+	net_test_server();
 
 	mm_uninitialize();
 

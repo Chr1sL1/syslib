@@ -1,6 +1,18 @@
 #ifndef __misc_h__
 #define __misc_h__
 
+
+#define err_exit(stmt, msg, ...)\
+	do {\
+		if(stmt){\
+			fprintf(stderr, "<%s:%d> ", __FILE__, __LINE__);\
+			fprintf(stderr, msg, ##__VA_ARGS__);\
+			fprintf(stderr, "\n");\
+		goto error_ret;\
+		}\
+	} while(0);
+
+
 unsigned long align_to_2power_top(unsigned long val);
 unsigned long align_to_2power_floor(unsigned long val);
 
@@ -27,4 +39,5 @@ void* move_ptr_align64(void* ptr, unsigned long offset);
 void* move_ptr_align128(void* ptr, unsigned long offset);
 
 void* move_ptr_roundup(void* ptr, unsigned long offset, unsigned long align);
+
 #endif
