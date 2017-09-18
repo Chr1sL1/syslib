@@ -131,6 +131,7 @@ struct _ses_impl
 
 	int _po_idx;
 	int _state;
+	int _debug_type;
 };
 
 struct _send_data_node
@@ -609,9 +610,10 @@ static struct _ses_impl* _net_create_session(struct _inet_impl* inet, int socket
 	long rslt;
 	int sock_opt;
 	struct _ses_impl* sei = 0;
+	struct timeval to;
 
 	sei = mm_zalloc(__the_ses_zone);
-	if(!sei) goto error_ret;
+	err_exit(!sei, "_net_create_session alloc session error.");
 
 	sei->_sock_fd = socket_fd;
 	sei->_inet = inet;
@@ -620,20 +622,26 @@ static struct _ses_impl* _net_create_session(struct _inet_impl* inet, int socket
 	rslt = setsockopt(sei->_sock_fd, SOL_SOCKET, SO_KEEPALIVE, &sock_opt, sizeof(int));
 	rslt = setsockopt(sei->_sock_fd, SOL_SOCKET, SO_RCVBUF, &inet->_the_net.cfg.recv_buff_len, sizeof(int));
 	rslt = setsockopt(sei->_sock_fd, SOL_SOCKET, SO_SNDBUF, &inet->_the_net.cfg.send_buff_len, sizeof(int));
-//	rslt = setsockopt(sei->_sock_fd, SOL_SOCKET, SO_LINGER, &__linger_option, sizeof(struct linger));
 
+	to.tv_sec = 8;
+	to.tv_usec = 0;
+
+	rslt = setsockopt(sei->_sock_fd, SOL_SOCKET, SO_RCVTIMEO, &to, sizeof(struct timeval));
+	rslt = setsockopt(sei->_sock_fd, SOL_SOCKET, SO_SNDTIMEO, &to, sizeof(struct timeval));
 
 	sei->_recv_buf_len = inet->_the_net.cfg.recv_buff_len;
 	sei->_recv_buf = mm_alloc(sei->_recv_buf_len);
-	if(!sei->_recv_buf) goto error_ret;
+	err_exit(!sei->_recv_buf, "_net_create_session alloc recv buff error.");
 
 	sei->_state = _SES_ESTABLISHING;
 	lst_push_back(&inet->_ses_list, &sei->_lst_node);
 
+//	printf("create session ptr <%p>\n", sei);
+
 	return sei;
 error_ret:
 	if(sei)
-		_net_disconn(sei);
+		_net_close(sei);
 	return 0;
 }
 
@@ -644,18 +652,18 @@ static struct _ses_impl* _internet_create_session(struct _inet_impl* inet, int s
 	struct epoll_event ev;
 
 	sei = _net_create_session(inet, socket_fd);
-	if(!sei) goto error_ret;
+	err_exit(!sei, "internet create session error.");
 
 	ev.events = EPOLLIN | EPOLLOUT | EPOLLET | EPOLLRDHUP;
 	ev.data.ptr = sei;
 
 	rslt = epoll_ctl(inet->_epoll_fd, EPOLL_CTL_ADD, sei->_sock_fd, &ev);
-	if(rslt < 0) goto error_ret;
+	err_exit(rslt < 0, "internet epoll_ctl error.");
 
 	return sei;
 error_ret:
 	if(sei)
-		_net_disconn(sei);
+		_net_close(sei);
 	return 0;
 }
 
@@ -668,7 +676,7 @@ static struct _ses_impl* _intranet_create_session(struct _inet_impl* inet, int s
 		goto error_ret;
 
 	sei = _net_create_session(inet, socket_fd);
-	if(!sei) goto error_ret;
+	err_exit(!sei, "intranet create session error.");
 
 	sei->_po_idx = inet->_po_cnt++;
 	inet->_po_fds[sei->_po_idx].fd = sei->_sock_fd;
@@ -678,7 +686,7 @@ static struct _ses_impl* _intranet_create_session(struct _inet_impl* inet, int s
 	return sei;
 error_ret:
 	if(sei)
-		_net_disconn(sei);
+		_net_close(sei);
 	return 0;
 }
 
@@ -686,7 +694,6 @@ struct net_struct* net_create(const struct net_config* cfg, const struct net_ops
 {
 	long rslt;
 	struct _inet_impl* inet;
-//	struct sigaction act;
 
 	if(!cfg || !ops) goto error_ret;
 
@@ -694,15 +701,12 @@ struct net_struct* net_create(const struct net_config* cfg, const struct net_ops
 		goto error_ret;
 
 	inet = _net_create(cfg, ops, &__net_ops[net_type]);
-	if(!inet) goto error_ret;
+	err_exit(!inet, "create net error.");
 
 	rslt = (*inet->_handler->__init_func)(inet);
-	if(rslt < 0) goto error_ret;
+	err_exit(rslt < 0, "init net error.");
 
 	signal(SIGPIPE, SIG_IGN);
-
-//	act.sa_handler = SIG_IGN;
-//	sigaction(SIGPIPE, &act, 0);
 
 	return &inet->_the_net;
 error_ret:
@@ -730,7 +734,7 @@ struct acceptor* net_create_acceptor(struct net_struct* net, unsigned int ip, un
 	inet = _conv_inet_impl(net);
 
 	aci = (*inet->_handler->__create_acc_func)(inet, ip, port);
-	if(!aci) goto error_ret;
+	err_exit(!aci, "create acceptor error.");
 
 	return &aci->_the_acc;
 error_ret:
@@ -762,13 +766,14 @@ static long _net_on_acc(struct _acc_impl* aci)
 	struct _inet_impl* inet = aci->_inet;
 
 	new_sock = accept4(aci->_sock_fd, (struct sockaddr*)&remote_addr, &addr_len, 0);
-	if(new_sock < 0) goto error_ret;
+	err_exit(new_sock < 0, "accept error.");
 
-	if(inet->_ses_list.size >= inet->_the_net.cfg.max_fd_count)
-		goto error_ret;
+	err_exit(inet->_ses_list.size >= inet->_the_net.cfg.max_fd_count, "accept: connection full.");
 
 	sei = (*inet->_handler->__create_ses_func)(inet, new_sock);
-	if(!sei) goto error_ret;
+	err_exit(!sei, "accept: create session error.");
+
+	sei->_debug_type = 1;
 
 	sei->_the_ses.remote_ip = ntohl(*(unsigned int*)&remote_addr.sin_addr);
 	sei->_the_ses.remote_port = ntohs(remote_addr.sin_port);
@@ -788,12 +793,6 @@ static long _net_close(struct _ses_impl* sei)
 	long rslt;
 	struct dlnode* dln;
 	struct _inet_impl* inet = sei->_inet;
-
-	rslt = lst_remove(&sei->_inet->_ses_list, &sei->_lst_node);
-	err_exit(rslt < 0, "_net_close error.");
-
-	close(sei->_sock_fd);
-	sei->_sock_fd = 0;
 
 	if(sei->_recv_buf)
 	{
@@ -815,6 +814,22 @@ static long _net_close(struct _ses_impl* sei)
 		}
 	}
 
+
+	if(sei->_state != _SES_INVALID && sei->_state != _SES_CLOSED)
+	{
+		on_disconn_func df = sei->_ops.func_disconn ? sei->_ops.func_disconn : inet->_the_net.ops.func_disconn;
+		if(df) (*df)(&sei->_the_ses);
+	}
+
+	rslt = lst_remove(&sei->_inet->_ses_list, &sei->_lst_node);
+	err_exit(rslt < 0, "_net_close error.");
+
+	if(sei->_sock_fd != 0)
+	{
+		close(sei->_sock_fd);
+		sei->_sock_fd = 0;
+	}
+
 	sei->_state = _SES_CLOSED;
 
 	return mm_zfree(__the_ses_zone, sei);
@@ -832,11 +847,9 @@ static void _net_on_recv(struct _ses_impl* sei)
 	on_recv_func rf;
 	struct _inet_impl* inet = sei->_inet;
 
-	if(!sei->_recv_buf || sei->_recv_buf_len <= 0)
-		goto error_ret;
-
-	if(sei->_state != _SES_NORMAL && sei->_state != _SES_ESTABLISHING)
-		goto error_ret;
+	err_exit(!sei->_recv_buf || sei->_recv_buf_len <= 0, "_net_on_recv(%d): recv buffer error <%p>", sei->_debug_type, sei);
+//	err_exit(sei->_state != _SES_NORMAL && sei->_state != _SES_ESTABLISHING,
+//			"_net_on_recv: session state error: %d, fd: %d", sei->_state, sei->_sock_fd);
 
 	rf = sei->_ops.func_recv ? sei->_ops.func_recv : inet->_the_net.ops.func_recv;
 
@@ -861,24 +874,34 @@ static void _net_on_recv(struct _ses_impl* sei)
 
 	if(recv_len < 0)
 	{
-		if(errno != EWOULDBLOCK && errno != EAGAIN)
-			goto error_ret;
-		else if(rf)
+		err_exit(errno != EWOULDBLOCK && errno != EAGAIN, "_net_on_recv(%d) [%d : %s], <%p>",
+				sei->_debug_type, errno, strerror(errno), sei);
+
+		if(rf && sei->_bytes_recv > 0)
 			(*rf)(&sei->_the_ses, sei->_recv_buf, sei->_bytes_recv);
 	}
 	else if(recv_len == 0)
-		_net_disconn(sei);
+	{
+		if(sei->_state == _SES_CLOSING)
+			_net_close(sei);
+		else
+			_net_disconn(sei);
+	}
 
+succ_ret:
 	return;
 error_ret:
-	_net_disconn(sei);
+	_net_close(sei);
 	return;
 }
 
 static inline void _net_on_error(struct _ses_impl* sei)
 {
-	printf("_net_on_error.\n");
-	_net_disconn(sei);
+	if(sei->_sock_fd == 0)
+		return;
+
+//	printf("on error <%p>\n", sei);
+	_net_close(sei);
 }
 
 static void _set_outbit(struct _inet_impl* inet, struct _ses_impl* sei)
@@ -924,19 +947,24 @@ static long _net_try_send_all(struct _ses_impl* sei)
 	if(sei->_state == _SES_CLOSING)
 	{
 		if(lst_empty(&sei->_send_list))
-//			(*inet->_handler->__close_ses_func)(sei);
+		{
+//			printf("send over, close <%p>\n", sei);
+
+			if(inet->_handler->__disconn_func)
+				(*inet->_handler->__disconn_func)(sei);
+
 			_net_close(sei);
+		}
 	}
 	else
 	{
 send_finish:
 		if(cnt < 0)
 		{
-			if(errno != EWOULDBLOCK && errno != EAGAIN)
-				goto error_ret;
+			err_exit(errno != EWOULDBLOCK && errno != EAGAIN, "send error [%d : %s] <%p>", errno, strerror(errno), sei);
 
-		if(inet->_handler->__set_outbit_func)
-			(*inet->_handler->__set_outbit_func)(inet, sei);
+			if(inet->_handler->__set_outbit_func)
+				(*inet->_handler->__set_outbit_func)(inet, sei);
 		}
 	}
 
@@ -966,6 +994,9 @@ static inline void _net_on_send(struct _ses_impl* sei)
 
 	}
 	_net_try_send_all(sei);
+
+error_ret:
+	return;
 }
 
 long net_send(struct session* ses, const char* data, int data_len)
@@ -978,29 +1009,26 @@ long net_send(struct session* ses, const char* data, int data_len)
 
 	sei = _conv_ses_impl(ses);
 
-	if(sei->_state != _SES_NORMAL)
-		goto error_ret;
+	err_exit(sei->_state != _SES_NORMAL, "net_send: session state error : %d <%p>", sei->_state, sei);
 
 	sdn = mm_zalloc(__the_send_data_zone);
-	if(!sdn) goto error_ret;
+	err_exit(!sdn, "net_send: alloc sdn error.");
 
 	lst_clr(&sdn->_lst_node);
 
 	sdn->_data_size = data_len;
 
 	sdn->_data = mm_alloc(data_len);
-	if(!sdn->_data) goto error_ret;
+	err_exit(!sdn->_data, "net_send: alloc sdn->data error.");
 
 	sdn->_data_sent = 0;
 
 	memcpy(sdn->_data, data, data_len);
 
 	rslt = lst_push_back(&sei->_send_list, &sdn->_lst_node);
-	if(rslt < 0) goto error_ret;
+	err_exit(rslt < 0, "net_send: link send data error.");
 
-	_net_try_send_all(sei);
-
-	return 0;
+	return _net_try_send_all(sei);
 error_ret:
 	if(sdn)
 	{
@@ -1013,8 +1041,12 @@ error_ret:
 
 static long _internet_disconn(struct _ses_impl* sei)
 {
-	epoll_ctl(sei->_inet->_epoll_fd, EPOLL_CTL_DEL, sei->_sock_fd, 0);
+	long rslt = epoll_ctl(sei->_inet->_epoll_fd, EPOLL_CTL_DEL, sei->_sock_fd, 0);
+	err_exit(rslt < 0, "internet disconn epoll_ctl error[%d : %s], <%p>", errno, strerror(errno), sei);
+
 	return 0;
+error_ret:
+	return -1;
 }
 
 static long _intranet_disconn(struct _ses_impl* sei)
@@ -1034,26 +1066,16 @@ static long _intranet_disconn(struct _ses_impl* sei)
 static inline long _net_disconn(struct _ses_impl* sei)
 {
 	long rslt;
-	on_disconn_func df;
 	struct _inet_impl* inet = sei->_inet;
 
-	if(sei->_state != _SES_NORMAL)
-		goto error_ret;
-
-	df = sei->_ops.func_disconn ? sei->_ops.func_disconn : inet->_the_net.ops.func_disconn;
-
-	if(df)
-		(*df)(&sei->_the_ses);
+	err_exit(sei->_state != _SES_NORMAL && sei->_state != _SES_ESTABLISHING,
+			"_net_disconn state error: %d, fd: %d.", sei->_state, sei->_sock_fd);
 
 	shutdown(sei->_sock_fd, SHUT_RD);
 
 	sei->_state = _SES_CLOSING;
-	_net_try_send_all(sei);
 
-	if(inet->_handler->__disconn_func)
-		(*inet->_handler->__disconn_func)(sei);
-
-	return 0;
+	return _net_try_send_all(sei);
 error_ret:
 	return -1;
 }
@@ -1065,6 +1087,8 @@ long net_disconnect(struct session* ses)
 
 	if(!ses) goto error_ret;
 	sei = _conv_ses_impl(ses);
+
+//	printf("net_disconnect <%p>\n", sei);
 
 	return _net_disconn(sei);
 error_ret:
@@ -1177,7 +1201,7 @@ error_ret:
 struct session* net_connect(struct net_struct* net, unsigned int ip, unsigned short port)
 {
 	long rslt;
-	int new_sock;
+	int new_sock, sock_opt;
 
 	struct _inet_impl* inet;
 	struct _ses_impl* sei;
@@ -1193,6 +1217,11 @@ struct session* net_connect(struct net_struct* net, unsigned int ip, unsigned sh
 	sei = (*inet->_handler->__create_ses_func)(inet, new_sock);
 	if(!sei) goto error_ret;
 
+	sei->_debug_type = 2;
+
+	sock_opt = 1;
+	rslt = setsockopt(sei->_sock_fd, SOL_SOCKET, SO_REUSEADDR, &sock_opt, sizeof(int));
+
 	addr.sin_family = AF_INET;
 	addr.sin_addr = *(struct in_addr*)&ip;
 	addr.sin_port = htons(port);
@@ -1205,7 +1234,7 @@ struct session* net_connect(struct net_struct* net, unsigned int ip, unsigned sh
 error_ret:
 	perror(strerror(errno));
 	if(sei)
-		_net_disconn(sei);
+		_net_close(sei);
 	return 0;
 }
 

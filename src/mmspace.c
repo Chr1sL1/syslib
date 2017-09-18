@@ -490,11 +490,11 @@ static long _mm_create_section(struct _mm_space_impl* mm, int ar_type)
 	int shmm_key;
 	struct _mm_area_impl* ar;
 	struct _mm_section_impl* sec = 0;
-	struct shmm_blk* shm;
+	struct shmm_blk* shm = 0;
 	union shmm_sub_key sub_key;
 	void* addr_begin;
 
-	if(mm->_total_shmm_count >= mm->_cfg.max_shmm_count) goto error_ret;
+	err_exit(mm->_total_shmm_count >= mm->_cfg.max_shmm_count, "too much shmm section.");
 
 	sub_key.ar_type = ar_type;
 	sub_key.ar_idx = ++mm->_next_shmm_key;
@@ -502,7 +502,7 @@ static long _mm_create_section(struct _mm_space_impl* mm, int ar_type)
 	shmm_key = mm_create_shm_key(MM_SHM_MEMORY_SPACE, mm->_cfg.sys_shmm_key, &sub_key);
 
 	shm = shmm_create(shmm_key, 0, mm->_cfg.mm_cfg[ar_type].total_size, mm->_cfg.try_huge_page);
-	if(!shm) goto error_ret;
+	err_exit(!shm, "create shmm error.");
 
 	ar = &mm->_area_list[ar_type];
 
@@ -510,14 +510,14 @@ static long _mm_create_section(struct _mm_space_impl* mm, int ar_type)
 	
 	rb_fillnew(&shm->rb_node);
 	rslt = rb_insert(&mm->_all_section_tree, &shm->rb_node);
-	if(rslt < 0) goto error_ret;
+	err_exit(rslt < 0, "shmm rb insert error.");
 
 	lst_clr(&shm->lst_node);
 	rslt = lst_push_back(&ar->_section_list, &shm->lst_node);
-	if(rslt < 0) goto error_ret;
+	err_exit(rslt < 0, "shmm link error.");
 
 	addr_begin = shmm_begin_addr(shm);
-	if(!addr_begin) goto error_ret;
+	err_exit(!addr_begin, "shmm begin addr error.");
 
 	sec = (struct _mm_section_impl*)addr_begin;
 
@@ -525,7 +525,7 @@ static long _mm_create_section(struct _mm_space_impl* mm, int ar_type)
 	sec->_padding = 0;
 
 	sec->_allocator = (*__mm_area_ops[ar_type]->create_func)(addr_begin + sizeof(struct _mm_section_impl), &mm->_cfg.mm_cfg[ar_type]);
-	if(!sec->_allocator) goto error_ret;
+	err_exit(!sec->_allocator, "shmm create allocator error.");
 
 	ar->_free_section = sec;
 
@@ -694,12 +694,11 @@ void* mm_area_alloc(unsigned long size, int ar_type)
 	struct shmm_blk* shm;
 	struct _mm_area_impl* ar;
 
-	if(ar_type < MM_AREA_BEGIN || ar_type >= MM_AREA_COUNT)
-		goto error_ret;
+	err_exit(ar_type < MM_AREA_BEGIN || ar_type >= MM_AREA_COUNT, "mm_area_alloc ar_type error.");
 
 	ar = &__the_mmspace->_area_list[ar_type];
 
-	if(!ar->_free_section) goto error_ret;
+	err_exit(!ar->_free_section, "mm_area_alloc no free section.");
 
 retry_alloc:
 
@@ -720,7 +719,7 @@ retry_alloc:
 	}
 
 	rslt = _mm_create_section(__the_mmspace, ar_type);
-	if(rslt < 0) goto error_ret;
+	err_exit(rslt < 0, "mm_area_alloc create section error.");
 
 	goto retry_alloc;
 
@@ -737,7 +736,7 @@ void* mm_alloc(unsigned long size)
 	unsigned long odr;
 	int ar_type;
 
-	if(size == 0) goto error_ret;
+	err_exit(size == 0, "mm_alloc size 0");
 	if(!__the_mmspace) goto error_ret;
 
 	odr = log_2(size) + 1;

@@ -10,13 +10,13 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
-#define USR_SESSION_ZONE_NAME "test_usr_session_zone"
+#define SVR_SESSION_ZONE_NAME "test_svr_session_zone"
 #define USR_TYPE_INFO (0x123123)
 #define MAX_LIVE_INTERVAL (10000)
 
-#define TEST_CONN_COUNT (1024)
+#define TEST_CONN_COUNT (1000)
 
-static struct mmzone* __usr_session_zone = 0;
+static struct mmzone* __svr_session_zone = 0;
 static long __running = 1;
 static unsigned long __time_val = 0;
 
@@ -29,6 +29,7 @@ enum USR_SESSION_STATE
 	USS_DISCONNECTED = 0,
 	USS_ESTABLISHING,
 	USS_RUNNING,
+	USS_DISCONNECTING,
 
 	USS_COUNT,
 };
@@ -38,6 +39,12 @@ static struct net_config __cfg =
 	.max_fd_count = 2048,
 	.recv_buff_len = 1024,
 	.send_buff_len = 1024,
+};
+
+struct svr_session
+{
+	struct session* s;
+	unsigned int state;
 };
 
 struct usr_session
@@ -66,17 +73,18 @@ static struct usr_session __conn_session[TEST_CONN_COUNT] =
 	}
 };
 
-static void _usr_session_ctor(void* ptr)
+static void _svr_session_ctor(void* ptr)
 {
-	struct usr_session* us = (struct usr_session*)ptr;
-	us->type_info = USR_TYPE_INFO;
-	us->conn_tick = 0;
+	struct svr_session* us = (struct svr_session*)ptr;
+	us->s = 0;
+	us->state = USS_DISCONNECTED;
 }
 
-static void _usr_session_dtor(void* ptr)
+static void _svr_session_dtor(void* ptr)
 {
-	struct usr_session* us = (struct usr_session*)ptr;
-	err_exit(us->type_info != USR_TYPE_INFO, "fatal error: usr_session_dtor.");
+	struct svr_session* us = (struct svr_session*)ptr;
+	us->s = 0;
+	us->state = USS_DISCONNECTED;
 
 error_ret:
 	return;
@@ -89,15 +97,15 @@ static void _signal_stop(int sig, siginfo_t* t, void* usr_data)
 
 static long _restore_zone(void)
 {
-	if(!__usr_session_zone)
-		__usr_session_zone = mm_search_zone(USR_SESSION_ZONE_NAME);
+	if(!__svr_session_zone)
+		__svr_session_zone = mm_search_zone(SVR_SESSION_ZONE_NAME);
 
-	if(__usr_session_zone && __usr_session_zone->obj_size != sizeof(struct usr_session))
+	if(__svr_session_zone && __svr_session_zone->obj_size != sizeof(struct svr_session))
 		goto error_ret;
 
-	__usr_session_zone = mm_zcreate(USR_SESSION_ZONE_NAME, sizeof(struct usr_session), _usr_session_ctor, _usr_session_dtor);
+	__svr_session_zone = mm_zcreate(SVR_SESSION_ZONE_NAME, sizeof(struct svr_session), _svr_session_ctor, _svr_session_dtor);
 
-	if(!__usr_session_zone)
+	if(!__svr_session_zone)
 		goto error_ret;
 
 	return 0;
@@ -108,14 +116,12 @@ error_ret:
 static long on_acc(struct acceptor* acc, struct session* se)
 {
 	long rslt;
-	struct usr_session* us;
+	struct svr_session* ss;
 
-	us = mm_zalloc(__usr_session_zone);
-	err_exit(!us, "on_acc alloc session failed.");
-
-	us->conn_tick = __time_val;
-
-	se->usr_ptr = us;
+	ss = mm_zalloc(__svr_session_zone);
+	err_exit(!ss, "on_acc alloc session failed.");
+	ss->s = se;
+	se->usr_ptr = ss;
 
 	return 0;
 error_ret:
@@ -125,12 +131,15 @@ error_ret:
 static long on_server_disconn(struct session* se)
 {
 	long rslt;
-	struct usr_session* us = (struct usr_session*)se->usr_ptr;
+	struct svr_session* ss = (struct svr_session*)se->usr_ptr;
 
-	rslt = mm_zfree(__usr_session_zone, us);
+	ss->s = 0;
+
+	rslt = mm_zfree(__svr_session_zone, ss);
 	err_exit(rslt < 0, "on_disconn free session failed.");
 
-	us->disconn_tick = __time_val;
+	se->usr_ptr = 0;
+
 
 	return 0;
 error_ret:
@@ -140,8 +149,10 @@ error_ret:
 static long on_server_recv(struct session* se, const void* buf, long len)
 {
 	__recv_bytes_server += len;
+//	if(len < 4)
+//		net_disconnect(se);
 
-//	net_send(se, buf, len);
+	net_send(se, buf, len);
 
 	return 0;
 error_ret:
@@ -158,17 +169,31 @@ error_ret:
 	return -1;
 }
 
+static void set_state(struct usr_session* us, int state)
+{
+	us->state = state;
+}
+
 static long on_client_conn(struct session* se)
 {
 	struct usr_session* us = (struct usr_session*)se->usr_ptr;
 	err_exit(!us, "strange error in on_client_conn");
 
-	us->state = USS_RUNNING;
+	err_exit(us->state != USS_ESTABLISHING, "us state error.");
+
+	if(us->s != se)
+	{
+		printf("fuck error session.\n");
+		goto error_ret;
+	}
+
+	set_state(us, USS_RUNNING);
 	us->conn_tick = __time_val;
 	us->live_interval = random() % MAX_LIVE_INTERVAL;
-	us->sleep_interval = random() % MAX_LIVE_INTERVAL / 2;
+	us->sleep_interval = random() % MAX_LIVE_INTERVAL;
 
-//	printf("session connected [%d]\n", us->idx);
+//	if(us->idx < 100)
+//		printf("client session connected [%d]\n", us->idx);
 
 	return 0;
 error_ret:
@@ -180,21 +205,30 @@ static long on_client_disconn(struct session* se)
 	struct usr_session* us = (struct usr_session*)se->usr_ptr;
 	err_exit(!us, "strange error in on_client_disconn");
 
-	us->state = USS_DISCONNECTED;
+	set_state(us, USS_DISCONNECTED);
+	us->s = 0;
 
-//	printf("client session disconnected [%d]\n", us->idx);
+	se->usr_ptr = 0;
+	us->disconn_tick = __time_val;
+
+//	if(us->idx < 100)
+//		printf("client session disconnected [%d]\n", us->idx);
 
 	return 0;
 error_ret:
 	return -1;
 }
 
-static void fill_send_data(char* buf, int size)
+static int fill_send_data(char* buf, int size)
 {
-	for(int i = 0; i < size; i++)
+	int len = random() % size;
+
+	for(int i = 0; i < len; i++)
 	{
 		buf[i] = random() % 255;
 	}
+
+	return len;
 }
 
 static long run_connector(struct net_struct* net)
@@ -206,6 +240,8 @@ static long run_connector(struct net_struct* net)
 		.func_disconn = on_client_disconn,
 	};
 	unsigned long r1 = 0, r2 = 0;
+	int send_len;
+	int pending_count = 0;
 
 	char send_buf[net->cfg.send_buff_len];
 
@@ -220,30 +256,46 @@ static long run_connector(struct net_struct* net)
 
 			__conn_session[i].idx = i;
 
-			struct session* s = net_connect(net, inet_addr("192.168.2.164"), 7070);
+			struct session* s = net_connect(net, inet_addr("192.168.1.3"), 7070);
 			err_exit(!s, "connect failed [%d]", i);
 
 			net_bind_session_ops(s, &ops);
 
-			__conn_session[i].state = USS_ESTABLISHING;
+			set_state(&__conn_session[i], USS_ESTABLISHING);
 			__conn_session[i].s = s;
-
 			s->usr_ptr = &__conn_session[i];
+			continue;
 		}
-		else if(__conn_session[i].state == USS_RUNNING)
+
+		if(__conn_session[i].state == USS_RUNNING)
 		{
-			if(__time_val - __conn_session[i].conn_tick > __conn_session[i].live_interval)
+			if(__time_val > __conn_session[i].conn_tick +  __conn_session[i].live_interval)
 			{
+//				if(i < 100) printf("try disconnect [%d]\n", i);
+				set_state(&__conn_session[i], USS_DISCONNECTING);
 				net_disconnect(__conn_session[i].s);
 				continue;
 			}
 
-			fill_send_data(send_buf, net->cfg.send_buff_len);
+			do
+			{
+				send_len = fill_send_data(send_buf, net->cfg.send_buff_len);
+			} while(send_len <= 0);
 
-			net_send(__conn_session[i].s, send_buf, net->cfg.send_buff_len - 1);
+			net_send(__conn_session[i].s, send_buf, send_len);
 			__send_bytes += (net->cfg.send_buff_len - 1);
+			continue;
+		}
+
+		if(__conn_session[i].state == USS_DISCONNECTING)
+		{
+			if(__conn_session[i].sleep_interval + __conn_session[i].disconn_tick + 3000 < __time_val)
+				++pending_count;
 		}
 	}
+
+	if(pending_count > 0)
+		printf("pending count: %d\n", pending_count);
 
 	r2 = rdtsc();
 
@@ -254,7 +306,7 @@ error_ret:
 	return -1;
 }
 
-long net_test_server(void)
+long net_test_server(int silent)
 {
 	long rslt;
 
@@ -263,6 +315,7 @@ long net_test_server(void)
 	struct net_ops ops;
 	struct net_struct* net;
 	struct acceptor* acc;
+	FILE* fp = 0;;
 
 	struct sigaction sa;
 	sa.sa_sigaction = _signal_stop;
@@ -276,6 +329,12 @@ long net_test_server(void)
 	ops.func_disconn = on_server_disconn;
 	ops.func_acc = on_acc;
 	ops.func_conn = 0;
+
+	if(silent)
+	{
+		fp = freopen("/dev/null", "w", stderr);
+		err_exit(!fp, "redirect stderr failed");
+	}
 
 	net = net_create(&__cfg, &ops, NT_INTERNET);
 	err_exit(!net, "create net failed.");
@@ -294,10 +353,10 @@ long net_test_server(void)
 		rslt = run_connector(net);
 		err_exit(rslt < 0, "run_connector failed.");
 
-		rslt = net_run(net, 1000);
+		rslt = net_run(net, 10);
 		err_exit(rslt < 0, "net_run failed.");
 
-		if(__time_val > count_tick + 500)
+		if(__time_val > count_tick + 300)
 		{
 			count_tick = __time_val;
 			printf(">>>>>>>>>>>>>>>>>>>>>> session count: %lu, server recvd bytes: %lu, client recvd bytes: %lu.\n",
@@ -310,5 +369,7 @@ long net_test_server(void)
 
 	return 0;
 error_ret:
+	if(fp)
+		fclose(fp);
 	return -1;
 }

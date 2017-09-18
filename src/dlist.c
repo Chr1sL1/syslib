@@ -83,6 +83,7 @@ error_ret:
 inline long lst_remove(struct dlist* lst, struct dlnode* node)
 {
 	if(!lst || !node) goto error_ret;
+	if(!node->prev || !node->next) goto error_ret;
 	if(lst->tail.prev == &lst->head || lst->head.next == &lst->tail) goto error_ret;
 	if(node == &lst->head || node == &lst->tail) goto error_ret;
 //	if(lst->size <= 0) goto error_ret;

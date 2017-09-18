@@ -475,10 +475,8 @@ void* pgp_alloc(struct pgpool* pgp, unsigned long size)
 
 	pg_count = round_up(size, pgpi->_cfg.pg_size) / pgpi->_cfg.pg_size;
 
-//	pg_count = (size + PG_SIZE - 1) >> PG_SIZE_SHIFT;
-
 	rslt = _take_free_node(pgpi, pg_count, &pgn);
-	if(rslt < 0 || !pgn) goto error_ret;
+	err_exit(rslt < 0 || !pgn, "pgp_alloc: take free node error.");
 
 	payload = _get_payload(pgn);
 	pgn->using = 1;

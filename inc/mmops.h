@@ -53,8 +53,8 @@ union shmm_sub_key
 {
 	struct
 	{
-		unsigned char ar_type;
 		unsigned char ar_idx;
+		unsigned char ar_type;
 	};
 
 	struct

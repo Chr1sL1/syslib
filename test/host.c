@@ -1372,14 +1372,14 @@ long init_mm(int key)
 	cfg.sys_shmm_key = key;
 	cfg.try_huge_page = 0;
 	cfg.sys_begin_addr = 0x7ffff7fd2000;
-	cfg.max_shmm_count = 8;
+	cfg.max_shmm_count = 32;
 
 
 	cfg.mm_cfg[MM_AREA_NUBBLE] = (struct mm_config)
 	{
 		.total_size = 20 * 1024 * 1024,
 		.min_order = 5,
-		.max_order = 11,
+		.max_order = 10,
 	};
 
 	cfg.mm_cfg[MM_AREA_PAGE] = (struct mm_config)
@@ -1391,7 +1391,7 @@ long init_mm(int key)
 
 	cfg.mm_cfg[MM_AREA_ZONE] = (struct mm_config)
 	{
-		.total_size = 20 * 1024 * 1024,
+		.total_size = 200 * 1024 * 1024,
 		.page_size = 0x1000,
 		.maxpg_count = 10,
 	};
@@ -1415,7 +1415,7 @@ error_ret:
 #define dbg(format, ...) printf(format, __VA_ARGS__)
 
 
-extern long net_test_server(void);
+extern long net_test_server(int);
 
 int main(void)
 {
@@ -1427,10 +1427,10 @@ int main(void)
 	unsigned long seed = time(0);
 	srandom(seed);
 
-	rslt = init_mm(15);
+	rslt = init_mm(11);
 	if(rslt < 0) goto error_ret;
 
-	net_test_server();
+	net_test_server(1);
 
 	mm_uninitialize();
 
