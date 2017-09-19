@@ -18,6 +18,7 @@
 
 static struct mmzone* __svr_session_zone = 0;
 static long __running = 1;
+static unsigned long __start_time = 0;
 static unsigned long __time_val = 0;
 
 static unsigned long __recv_bytes_server = 0;
@@ -294,8 +295,8 @@ static long run_connector(struct net_struct* net)
 		}
 	}
 
-	if(pending_count > 0)
-		printf("pending count: %d\n", pending_count);
+//	if(pending_count > 0)
+//		printf("pending count: %d\n", pending_count);
 
 	r2 = rdtsc();
 
@@ -316,6 +317,7 @@ long net_test_server(int silent)
 	struct net_struct* net;
 	struct acceptor* acc;
 	FILE* fp = 0;;
+	struct timeval tv;
 
 	struct sigaction sa;
 	sa.sa_sigaction = _signal_stop;
@@ -329,6 +331,9 @@ long net_test_server(int silent)
 	ops.func_disconn = on_server_disconn;
 	ops.func_acc = on_acc;
 	ops.func_conn = 0;
+
+	gettimeofday(&tv, 0);
+	__start_time = tv.tv_sec * 1000 + tv.tv_usec / 1000;
 
 	if(silent)
 	{
@@ -344,11 +349,11 @@ long net_test_server(int silent)
 
 	while(__running)
 	{
-		struct timeval tv;
-
+		unsigned long time_diff;
 		gettimeofday(&tv, 0);
-
 		__time_val = tv.tv_sec * 1000 + tv.tv_usec / 1000;
+
+		time_diff = __time_val - __start_time;
 
 		rslt = run_connector(net);
 		err_exit(rslt < 0, "run_connector failed.");
@@ -356,11 +361,14 @@ long net_test_server(int silent)
 		rslt = net_run(net, 10);
 		err_exit(rslt < 0, "net_run failed.");
 
-		if(__time_val > count_tick + 300)
+		if(__time_val > count_tick + 500)
 		{
 			count_tick = __time_val;
-			printf(">>>>>>>>>>>>>>>>>>>>>> session count: %lu, server recvd bytes: %lu, client recvd bytes: %lu.\n",
-					net_session_count(net), __recv_bytes_server, __recv_bytes_client);
+			if(time_diff > 0)
+			{
+				printf(">>>>>>>>>>>>>>>>>>>>>> session count: %lu, server recvd bytes: %lu, client recvd bytes: %lu, upload speed: %lu(KB/s), download speed: %lu(KB/s).\n",
+						net_session_count(net), __recv_bytes_server, __recv_bytes_client, __recv_bytes_server * 2 / time_diff, __recv_bytes_client * 2 / time_diff);
+			}
 		}
 	}
 

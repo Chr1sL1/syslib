@@ -121,25 +121,22 @@ struct _ses_impl
 	struct _inet_impl* _inet;
 	struct session _the_ses;
 	struct dlnode _lst_node;
-	struct dlist _send_list;
+//	struct dlist _send_list;
 	struct session_ops _ops;
 
 	char* _recv_buf;
+	char* _send_buf;
 
 	unsigned int _bytes_recv;
 	unsigned int _recv_buf_len;
 
+	unsigned int _send_buf_len;
+	int _r_offset;
+	int _w_offset;
+
 	int _po_idx;
 	int _state;
 	int _debug_type;
-};
-
-struct _send_data_node
-{
-	struct dlnode _lst_node;
-	void* _data;
-	int _data_size;
-	int _data_sent;
 };
 
 static struct linger __linger_option =
@@ -150,7 +147,7 @@ static struct linger __linger_option =
 
 static struct mmzone* __the_acc_zone = 0;
 static struct mmzone* __the_ses_zone = 0;
-static struct mmzone* __the_send_data_zone = 0;
+//static struct mmzone* __the_send_data_zone = 0;
 
 static long _internet_init(struct _inet_impl* inet);
 static long _intranet_init(struct _inet_impl* inet);
@@ -245,9 +242,20 @@ static inline struct _ses_impl* _conv_ses_dln(struct dlnode* dln)
 	return (struct _ses_impl*)((unsigned long)dln - (unsigned long)&((struct _ses_impl*)(0))->_lst_node);
 }
 
-static inline struct _send_data_node* _conv_send_data_dln(struct dlnode* dln)
+//static inline struct _send_data_node* _conv_send_data_dln(struct dlnode* dln)
+//{
+//	return (struct _send_data_node*)((unsigned long)dln - (unsigned long)&((struct _send_data_node*)(0))->_lst_node);
+//}
+
+static inline void _sei_free_buf(struct _ses_impl* sei)
 {
-	return (struct _send_data_node*)((unsigned long)dln - (unsigned long)&((struct _send_data_node*)(0))->_lst_node);
+	if(sei->_recv_buf)
+		mm_free(sei->_recv_buf);
+	if(sei->_send_buf)
+		mm_free(sei->_send_buf);
+
+	sei->_recv_buf = 0;
+	sei->_send_buf = 0;
 }
 
 static void _sei_ctor(void* ptr)
@@ -261,7 +269,6 @@ static void _sei_ctor(void* ptr)
 	sei->_the_ses.usr_ptr = 0;
 
 	lst_clr(&sei->_lst_node);
-	lst_new(&sei->_send_list);
 
 	sei->_ops.func_conn = 0;
 	sei->_ops.func_recv = 0;
@@ -270,18 +277,68 @@ static void _sei_ctor(void* ptr)
 	sei->_recv_buf_len = 0;
 	sei->_bytes_recv = 0;
 
+	sei->_send_buf_len = 0;
+
 	sei->_po_idx = 0;
 	sei->_state = _SES_INVALID;
 	sei->_type_info = SES_TYPE_INFO;
+
+	sei->_r_offset = 0;
+	sei->_w_offset = 0;
 }
 
 static void _sei_dtor(void* ptr)
 {
 	struct _ses_impl* sei = (struct _ses_impl*)ptr;
-
-	if(sei->_recv_buf)
-		mm_free(sei->_recv_buf);
+	_sei_free_buf(sei);
 }
+
+static inline long _write_send_buf(struct _ses_impl* sei, const char* data, int datalen)
+{
+	int r_offset, w_offset;
+	int remain;
+
+	r_offset = sei->_r_offset;
+	w_offset = sei->_w_offset;
+
+	if(w_offset < r_offset)
+	{
+		remain = r_offset - w_offset;
+		if(remain < datalen) goto error_ret;
+
+		memcpy(sei->_send_buf + w_offset, data, datalen);
+		w_offset += datalen;
+
+		goto succ_ret;
+	}
+	else if(w_offset + datalen < r_offset + sei->_send_buf_len)
+	{
+		remain = sei->_send_buf_len - w_offset;
+		if(remain >= datalen)
+		{
+			memcpy(sei->_send_buf + w_offset, data, datalen);
+			w_offset += datalen;
+		}
+		else
+		{
+			int remain2 = datalen - remain;
+			memcpy(sei->_send_buf + w_offset, data, remain);
+			memcpy(sei->_send_buf, data + remain, remain2);
+			w_offset = remain2;
+		}
+
+		goto succ_ret;
+	}
+
+	goto error_ret;
+
+succ_ret:
+	sei->_w_offset = w_offset;
+	return 0;
+error_ret:
+	return -1;
+}
+
 
 static inline long _net_try_restore_zones(void)
 {
@@ -310,20 +367,6 @@ static inline long _net_try_restore_zones(void)
 		else
 		{
 			err_exit(__the_ses_zone->obj_size != sizeof(struct _ses_impl), "ses zone data error.");
-		}
-	}
-
-	if(!__the_send_data_zone)
-	{
-		__the_send_data_zone = mm_search_zone(NET_SEND_DATA_ZONE_NAME);
-		if(!__the_send_data_zone)
-		{
-			__the_send_data_zone = mm_zcreate(NET_SEND_DATA_ZONE_NAME, sizeof(struct _send_data_node), 0, 0);
-			err_exit(!__the_send_data_zone, "restore send data zone failed.");
-		}
-		else
-		{
-			err_exit(__the_send_data_zone->obj_size != sizeof(struct _send_data_node), "send data zone data error.");
 		}
 	}
 
@@ -630,8 +673,13 @@ static struct _ses_impl* _net_create_session(struct _inet_impl* inet, int socket
 	rslt = setsockopt(sei->_sock_fd, SOL_SOCKET, SO_SNDTIMEO, &to, sizeof(struct timeval));
 
 	sei->_recv_buf_len = inet->_the_net.cfg.recv_buff_len;
+	sei->_send_buf_len = inet->_the_net.cfg.send_buff_len;
+
 	sei->_recv_buf = mm_alloc(sei->_recv_buf_len);
 	err_exit(!sei->_recv_buf, "_net_create_session alloc recv buff error.");
+
+	sei->_send_buf = mm_alloc(sei->_send_buf_len);
+	err_exit(!sei->_send_buf, "_net_create_session alloc send buff error.");
 
 	sei->_state = _SES_ESTABLISHING;
 	lst_push_back(&inet->_ses_list, &sei->_lst_node);
@@ -794,26 +842,7 @@ static long _net_close(struct _ses_impl* sei)
 	struct dlnode* dln;
 	struct _inet_impl* inet = sei->_inet;
 
-	if(sei->_recv_buf)
-	{
-		mm_free(sei->_recv_buf);
-		sei->_recv_buf = 0;
-	}
-
-	if(!lst_empty(&sei->_send_list))
-	{
-		dln = sei->_send_list.head.next;
-
-		while(dln != &sei->_send_list.tail)
-		{
-			struct _send_data_node* sdn = _conv_send_data_dln(dln);
-			dln = dln->next;
-
-			mm_free(sdn->_data);
-			mm_zfree(__the_send_data_zone, sdn);
-		}
-	}
-
+	_sei_free_buf(sei);
 
 	if(sei->_state != _SES_INVALID && sei->_state != _SES_CLOSED)
 	{
@@ -826,6 +855,9 @@ static long _net_close(struct _ses_impl* sei)
 
 	if(sei->_sock_fd != 0)
 	{
+		if(inet->_handler->__disconn_func)
+			(*inet->_handler->__disconn_func)(sei);
+
 		close(sei->_sock_fd);
 		sei->_sock_fd = 0;
 	}
@@ -848,8 +880,6 @@ static void _net_on_recv(struct _ses_impl* sei)
 	struct _inet_impl* inet = sei->_inet;
 
 	err_exit(!sei->_recv_buf || sei->_recv_buf_len <= 0, "_net_on_recv(%d): recv buffer error <%p>", sei->_debug_type, sei);
-//	err_exit(sei->_state != _SES_NORMAL && sei->_state != _SES_ESTABLISHING,
-//			"_net_on_recv: session state error: %d, fd: %d", sei->_state, sei->_sock_fd);
 
 	rf = sei->_ops.func_recv ? sei->_ops.func_recv : inet->_the_net.ops.func_recv;
 
@@ -872,20 +902,13 @@ static void _net_on_recv(struct _ses_impl* sei)
 	}
 	while(recv_len > 0);
 
-	if(recv_len < 0)
+	if(recv_len <= 0)
 	{
 		err_exit(errno != EWOULDBLOCK && errno != EAGAIN, "_net_on_recv(%d) [%d : %s], <%p>",
 				sei->_debug_type, errno, strerror(errno), sei);
 
 		if(rf && sei->_bytes_recv > 0)
 			(*rf)(&sei->_the_ses, sei->_recv_buf, sei->_bytes_recv);
-	}
-	else if(recv_len == 0)
-	{
-		if(sei->_state == _SES_CLOSING)
-			_net_close(sei);
-		else
-			_net_disconn(sei);
 	}
 
 succ_ret:
@@ -900,7 +923,6 @@ static inline void _net_on_error(struct _ses_impl* sei)
 	if(sei->_sock_fd == 0)
 		return;
 
-//	printf("on error <%p>\n", sei);
 	_net_close(sei);
 }
 
@@ -917,44 +939,43 @@ static void _clr_outbit(struct _inet_impl* inet, struct _ses_impl* sei)
 static long _net_try_send_all(struct _ses_impl* sei)
 {
 	int cnt = 0;
-	struct dlnode* dln;
-	struct dlnode* rmv_dln;
+	int remain;
 	struct _inet_impl* inet = sei->_inet;
 
-	dln = sei->_send_list.head.next;
-
-	while(dln != &sei->_send_list.tail)
+	if(sei->_r_offset <= sei->_w_offset)
 	{
-		struct _send_data_node* sdn = _conv_send_data_dln(dln);
-
-		while(sdn->_data_size > sdn->_data_sent)
+send_from_start:
+		remain = sei->_w_offset - sei->_r_offset;
+		if(remain > 0)
 		{
-			cnt = send(sei->_sock_fd, sdn->_data + sdn->_data_sent, sdn->_data_size - sdn->_data_sent, MSG_DONTWAIT);
+			cnt = send(sei->_sock_fd, sei->_send_buf + sei->_r_offset, remain, MSG_DONTWAIT);
 			if(cnt <= 0) goto send_finish;
 
-			sdn->_data_sent += cnt;
+			sei->_r_offset += cnt;
+		}
+	}
+	else
+	{
+		remain = sei->_send_buf_len - sei->_r_offset;
+
+		while(remain > 0)
+		{
+			cnt = send(sei->_sock_fd, sei->_send_buf + sei->_r_offset, remain, MSG_DONTWAIT);
+			if(cnt <= 0) goto send_finish;
+
+			sei->_r_offset += cnt;
+			remain = sei->_send_buf_len - sei->_r_offset;
 		}
 
-		rmv_dln = dln;
-		dln = dln->next;
+		sei->_r_offset = 0;
 
-		lst_remove(&sei->_send_list, rmv_dln);
-
-		mm_free(sdn->_data);
-		mm_zfree(__the_send_data_zone, sdn);
+		goto send_from_start;
 	}
 
 	if(sei->_state == _SES_CLOSING)
 	{
-		if(lst_empty(&sei->_send_list))
-		{
-//			printf("send over, close <%p>\n", sei);
-
-			if(inet->_handler->__disconn_func)
-				(*inet->_handler->__disconn_func)(sei);
-
+		if(sei->_r_offset >= sei->_w_offset)
 			_net_close(sei);
-		}
 	}
 	else
 	{
@@ -1003,39 +1024,19 @@ long net_send(struct session* ses, const char* data, int data_len)
 {
 	long rslt;
 	struct _ses_impl* sei;
-	struct _send_data_node* sdn = 0;
+	char* cur_send_p;
 
-	if(!ses) goto error_ret;
+	err_exit(!ses || !data || data_len <= 0, "net_send: invalid args.");
 
 	sei = _conv_ses_impl(ses);
 
 	err_exit(sei->_state != _SES_NORMAL, "net_send: session state error : %d <%p>", sei->_state, sei);
 
-	sdn = mm_zalloc(__the_send_data_zone);
-	err_exit(!sdn, "net_send: alloc sdn error.");
-
-	lst_clr(&sdn->_lst_node);
-
-	sdn->_data_size = data_len;
-
-	sdn->_data = mm_alloc(data_len);
-	err_exit(!sdn->_data, "net_send: alloc sdn->data error.");
-
-	sdn->_data_sent = 0;
-
-	memcpy(sdn->_data, data, data_len);
-
-	rslt = lst_push_back(&sei->_send_list, &sdn->_lst_node);
-	err_exit(rslt < 0, "net_send: link send data error.");
+	rslt = _write_send_buf(sei, data, data_len);
+	err_exit(rslt < 0, "net_send: send buff full.");
 
 	return _net_try_send_all(sei);
 error_ret:
-	if(sdn)
-	{
-		if(sdn->_data)
-			mm_free(sdn->_data);
-		mm_zfree(__the_send_data_zone, sdn);
-	}
 	return -1;
 }
 
@@ -1087,8 +1088,6 @@ long net_disconnect(struct session* ses)
 
 	if(!ses) goto error_ret;
 	sei = _conv_ses_impl(ses);
-
-//	printf("net_disconnect <%p>\n", sei);
 
 	return _net_disconn(sei);
 error_ret:
@@ -1160,6 +1159,11 @@ static long _intranet_run(struct _inet_impl* inet, int timeout)
 			inet->_po_fds[i].events = inet->_po_fds[last].events;
 			inet->_po_fds[i].revents = inet->_po_fds[last].revents;
 			inet->_po_obj[i] = inet->_po_obj[last];
+
+			inet->_po_fds[last].fd = 0;
+			inet->_po_fds[last].events = 0;
+			inet->_po_fds[last].revents = 0;
+			inet->_po_obj[last] = 0;
 
 			--inet->_po_cnt;
 

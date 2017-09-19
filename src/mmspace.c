@@ -167,6 +167,23 @@ error_ret:
 	return -1;
 }
 
+static long _check_alloc_bits(struct _mm_cache* mc)
+{
+	int count = 0;
+
+	for(int i = 0; i < 64; ++i)
+	{
+		if((mc->_alloc_bits & (1UL << i)) != 0)
+			++count;
+	}
+
+	err_exit(count != (mc->_obj_count - mc->_free_count), "fk");
+
+	return 0;
+error_ret:
+	return -1;
+}
+
 static inline void* _mm_zfetch_obj(struct _mm_cache* mc)
 {
 	void* p;
@@ -176,8 +193,12 @@ static inline void* _mm_zfetch_obj(struct _mm_cache* mc)
 
 	p = mc->_obj_ptr + idx * mc->_zone->_the_zone.obj_size;
 
+//	err_exit(_check_alloc_bits(mc) < 0, "check failed");
+
 	mc->_alloc_bits |= (1UL << idx);
 	--mc->_free_count;
+
+//	err_exit(_check_alloc_bits(mc) < 0, "check failed");
 
 	return p;
 error_ret:
@@ -186,11 +207,24 @@ error_ret:
 
 static inline long _mm_zreturn_obj(struct _mm_cache* mc, void* p)
 {
-	int idx = (p - mc->_obj_ptr) / mc->_zone->_the_zone.obj_size;
+	long idx;
+
+	err_exit(p < mc->_obj_ptr, "invalid p.");
+
+	idx = (p - mc->_obj_ptr) / mc->_zone->_the_zone.obj_size;
+
 	if(idx < 0 || idx >= mc->_obj_count) goto error_ret;
+
+	err_exit((mc->_alloc_bits & (1UL << idx)) == 0, "return twice!!");
+
+//	err_exit(_check_alloc_bits(mc) < 0, "check failed");
+
+//	printf("alloc bits: 0x%lx\n", mc->_alloc_bits);
 
 	++mc->_free_count;
 	mc->_alloc_bits &= ~(1UL << idx);
+
+//	err_exit(_check_alloc_bits(mc) < 0, "check failed");
 
 	return 0;
 error_ret:
@@ -356,7 +390,7 @@ void* mm_zalloc(struct mmzone* mmz)
 		p = _mm_zfetch_obj(mc);
 		if(!p) goto error_ret;
 
-		if(mc->_free_count <= 0)
+		if(_mm_zcache_full(mc))
 			_mm_zmove_cache(mc, &mzi->_partial_slab_list, &mzi->_full_slab_list);
 	}
 	else
@@ -693,6 +727,7 @@ void* mm_area_alloc(unsigned long size, int ar_type)
 	struct dlnode* dln;
 	struct shmm_blk* shm;
 	struct _mm_area_impl* ar;
+	unsigned long alloc_count, free_count;
 
 	err_exit(ar_type < MM_AREA_BEGIN || ar_type >= MM_AREA_COUNT, "mm_area_alloc ar_type error.");
 
@@ -716,6 +751,12 @@ retry_alloc:
 		if(p) goto succ_ret;
 
 		dln = dln->next;
+	}
+
+	if(__mm_area_ops[ar_type]->counts_func)
+	{
+		(*__mm_area_ops[ar_type]->counts_func)(ar->_free_section->_allocator, &alloc_count, &free_count);
+		printf("alloc: %lu, free: %lu, ar_type: %d\n", alloc_count, free_count, ar_type);
 	}
 
 	rslt = _mm_create_section(__the_mmspace, ar_type);

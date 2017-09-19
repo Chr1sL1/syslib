@@ -68,13 +68,23 @@ struct _pgpool_impl
 
 	struct dlist _free_pgn_list;
 	struct _pg_node* _pgn_pool;
+
+	unsigned long _alloc_count;
+	unsigned long _free_count;
+
 }__attribute__((aligned(8)));
+
+
+static inline struct _pgpool_impl* _conv_impl(struct pgpool* pgp)
+{
+	return (struct _pgpool_impl*)((void*)pgp - (unsigned long)(&((struct _pgpool_impl*)(0))->_the_pool));
+}
+
 
 static void* __pgp_create_agent(void* addr, struct mm_config* cfg)
 {
 	return pgp_create(addr, cfg);
 }
-
 
 static void* __pgp_load_agent(void* addr)
 {
@@ -96,6 +106,13 @@ static long __pgp_free_agent(void* alloc, void* p)
 	return pgp_free((struct pgpool*)alloc, p);
 }
 
+static void __pgp_counts(void* alloc, unsigned long* alloc_count, unsigned long* free_count)
+{
+	struct _pgpool_impl* pgpi = _conv_impl((struct pgpool*)alloc);
+	*alloc_count = pgpi->_alloc_count;
+	*free_count = pgpi->_free_count;
+}
+
 struct mm_ops __pgp_ops =
 {
 	.create_func = __pgp_create_agent,
@@ -104,13 +121,9 @@ struct mm_ops __pgp_ops =
 
 	.alloc_func = __pgp_alloc_agent,
 	.free_func = __pgp_free_agent,
+	.counts_func = __pgp_counts,
 };
 
-
-static inline struct _pgpool_impl* _conv_impl(struct pgpool* pgp)
-{
-	return (struct _pgpool_impl*)((void*)pgp - (unsigned long)(&((struct _pgpool_impl*)(0))->_the_pool));
-}
 
 static inline struct _pg_node* _conv_rbn(struct rbnode* rbn)
 {
@@ -481,6 +494,8 @@ void* pgp_alloc(struct pgpool* pgp, unsigned long size)
 	payload = _get_payload(pgn);
 	pgn->using = 1;
 
+	++pgpi->_alloc_count;
+
 	return payload;
 error_ret:
 	return 0;
@@ -502,6 +517,8 @@ long pgp_free(struct pgpool* pgp, void* payload)
 	pgn->using = 0;
 	rslt = _return_free_node(pgpi, pgn);
 	if(rslt < 0) goto error_ret;
+
+	++pgpi->_free_count;
 
 	return 0;
 error_ret:

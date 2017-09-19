@@ -28,6 +28,8 @@ typedef void (*mm_ops_destroy)(void*);
 typedef void* (*mm_ops_alloc)(void*, unsigned long);
 typedef long (*mm_ops_free)(void*, void*);
 
+typedef void (*mm_ops_counts)(void*, unsigned long*, unsigned long*);
+
 
 struct mm_ops
 {
@@ -37,6 +39,8 @@ struct mm_ops
 
 	mm_ops_alloc alloc_func;
 	mm_ops_free free_func;
+
+	mm_ops_counts counts_func;
 };
 
 enum MM_SHM_TYPE
