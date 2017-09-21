@@ -1,7 +1,7 @@
 #include "net.h"
 #include "mmspace.h"
-#include "ringbuf.h"
 #include "dlist.h"
+#include "rbtree.h"
 #include "misc.h"
 
 #ifdef __linux__
@@ -24,7 +24,7 @@
 
 #define NET_ACC_ZONE_NAME "net_acc_zone"
 #define NET_SES_ZONE_NAME "net_ses_zone"
-#define NET_SEND_DATA_ZONE_NAME "net_send_data_zone"
+#define NET_POLL_OBJ_ZONE "net_poll_obj_zone"
 
 #define NET_BACKLOG_COUNT 1024
 #define MSG_SIZE_LEN (2)
@@ -71,9 +71,12 @@ struct _nt_ops
 	_nt_disconn_func __disconn_func;
 
 	_nt_run_func __run_func;
+};
 
-	_nt_set_outbit_func __set_outbit_func;
-	_nt_clr_outbit_func __clr_outbit_func;
+struct _poll_obj
+{
+	struct rbnode _rbn;
+	void* _obj;
 };
 
 struct _inet_impl
@@ -94,8 +97,7 @@ struct _inet_impl
 
 		struct
 		{
-			struct pollfd* _po_fds;
-			void** _po_obj;
+			struct rbtree _po_rbt;
 			int _po_cnt;
 		};
 	};
@@ -110,7 +112,7 @@ struct _acc_impl
 	struct acceptor _the_acc;
 	struct dlnode _lst_node;
 
-	int _po_idx;
+	struct _poll_obj* _obj;
 };
 
 struct _ses_impl
@@ -121,8 +123,9 @@ struct _ses_impl
 	struct _inet_impl* _inet;
 	struct session _the_ses;
 	struct dlnode _lst_node;
-//	struct dlist _send_list;
 	struct session_ops _ops;
+
+	struct _poll_obj* _obj;
 
 	char* _recv_buf;
 	char* _send_buf;
@@ -147,7 +150,7 @@ static struct linger __linger_option =
 
 static struct mmzone* __the_acc_zone = 0;
 static struct mmzone* __the_ses_zone = 0;
-//static struct mmzone* __the_send_data_zone = 0;
+static struct mmzone* __the_poll_obj_zone = 0;
 
 static long _internet_init(struct _inet_impl* inet);
 static long _intranet_init(struct _inet_impl* inet);
@@ -169,9 +172,6 @@ static long _intranet_disconn(struct _ses_impl* sei);
 
 static long _internet_run(struct _inet_impl* inet, int timeout);
 static long _intranet_run(struct _inet_impl* inet, int timeout);
-
-static void _set_outbit(struct _inet_impl* inet, struct _ses_impl* sei);
-static void _clr_outbit(struct _inet_impl* inet, struct _ses_impl* sei);
 
 static long _internet_on_acc(struct _acc_impl* aci);
 static long _net_close(struct _ses_impl* sei);
@@ -195,8 +195,6 @@ struct _nt_ops __net_ops[NT_COUNT] =
 		.__create_ses_func = _internet_create_session,
 		.__disconn_func = _internet_disconn,
 		.__run_func = _internet_run,
-		.__set_outbit_func = 0,
-		.__clr_outbit_func = 0,
 
 	},
 
@@ -211,8 +209,6 @@ struct _nt_ops __net_ops[NT_COUNT] =
 		.__disconn_func = _intranet_disconn,
 		.__run_func = _intranet_run,
 
-		.__set_outbit_func = _set_outbit,
-		.__clr_outbit_func = _clr_outbit,
 	},
 };
 
@@ -242,10 +238,10 @@ static inline struct _ses_impl* _conv_ses_dln(struct dlnode* dln)
 	return (struct _ses_impl*)((unsigned long)dln - (unsigned long)&((struct _ses_impl*)(0))->_lst_node);
 }
 
-//static inline struct _send_data_node* _conv_send_data_dln(struct dlnode* dln)
-//{
-//	return (struct _send_data_node*)((unsigned long)dln - (unsigned long)&((struct _send_data_node*)(0))->_lst_node);
-//}
+static inline struct _poll_obj* _conv_poll_obj_rbn(struct rbnode* rbn)
+{
+	return (struct _poll_obj*)((unsigned long)rbn - (unsigned long)&((struct _poll_obj*)(0))->_rbn);
+}
 
 static inline void _sei_free_buf(struct _ses_impl* sei)
 {
@@ -291,6 +287,14 @@ static void _sei_dtor(void* ptr)
 {
 	struct _ses_impl* sei = (struct _ses_impl*)ptr;
 	_sei_free_buf(sei);
+}
+
+static void _poll_obj_ctor(void* ptr)
+{
+	struct _poll_obj* obj = (struct _poll_obj*)ptr;
+
+	obj->_obj = 0;
+	rb_fillnew(&obj->_rbn);
 }
 
 static inline long _write_send_buf(struct _ses_impl* sei, const char* data, int datalen)
@@ -370,6 +374,20 @@ static inline long _net_try_restore_zones(void)
 		}
 	}
 
+	if(!__the_poll_obj_zone)
+	{
+		__the_poll_obj_zone = mm_search_zone(NET_POLL_OBJ_ZONE);
+		if(!__the_poll_obj_zone)
+		{
+			__the_poll_obj_zone = mm_zcreate(NET_POLL_OBJ_ZONE, sizeof(struct _poll_obj), _poll_obj_ctor, 0);
+			err_exit(!__the_poll_obj_zone, "restore poll obj zone failed.");
+		}
+		else
+		{
+			err_exit(__the_poll_obj_zone->obj_size != sizeof(struct _poll_obj), "poll obj zone data error.");
+		}
+	}
+
 	return 0;
 error_ret:
 	return -1;
@@ -426,21 +444,9 @@ error_ret:
 
 static long _intranet_init(struct _inet_impl* inet)
 {
-	inet->_po_fds = mm_area_alloc(inet->_the_net.cfg.max_fd_count * sizeof(struct pollfd), MM_AREA_PERSIS);
-	if(!inet->_po_fds) goto error_ret;
-
-	inet->_po_obj = mm_area_alloc(inet->_the_net.cfg.max_fd_count * sizeof(void*), MM_AREA_PERSIS);
-	if(!inet->_po_obj) goto error_ret;
-
+	rb_init(&inet->_po_rbt, 0);
 	inet->_po_cnt = 0;
-
 	return 0;
-error_ret:
-	if(inet->_po_obj)
-		mm_free(inet->_po_obj);
-	if(inet->_po_fds)
-		mm_free(inet->_po_fds);
-	return -1;
 }
 
 static long _net_destroy(struct _inet_impl* inet)
@@ -501,9 +507,6 @@ static long _intranet_destroy(struct _inet_impl* inet)
 {
 	long rslt;
 	struct dlnode *dln, *rmv_dln;
-
-	mm_free(inet->_po_obj);
-	mm_free(inet->_po_fds);
 
 	rslt = _net_destroy(inet);
 	if(rslt < 0) goto error_ret;
@@ -583,27 +586,37 @@ error_ret:
 
 static struct _acc_impl* _intranet_create_acceptor(struct _inet_impl* inet, unsigned int ip, unsigned short port)
 {
+	long rslt;
 	struct _acc_impl* aci;
-
-	if(inet->_po_cnt >= inet->_the_net.cfg.max_fd_count)
-		goto error_ret;
+	struct _poll_obj* poll_obj;
 
 	aci = _net_create_acc(inet, ip, port);
-	if(!aci) goto error_ret;
+	err_exit(!aci, "intranet: net create acc failed.");
 
-	aci->_po_idx = inet->_po_cnt++;
-	inet->_po_fds[aci->_po_idx].fd = aci->_sock_fd;
-	inet->_po_fds[aci->_po_idx].events = POLLIN;
-	inet->_po_obj[aci->_po_idx] = aci;
+	poll_obj = mm_zalloc(__the_poll_obj_zone);
+	err_exit(!poll_obj, "intranet: create poll obj failed.");
+
+	aci->_obj = poll_obj;
+	poll_obj->_obj = aci;
+	poll_obj->_rbn.key = (void*)(long)aci->_sock_fd;
+
+	rslt = rb_insert(&inet->_po_rbt, &poll_obj->_rbn);
+	err_exit(rslt < 0, "intranet: insert poll obj failed");
+
+	++inet->_po_cnt;
 
 	return aci;
 error_ret:
+	if(poll_obj)
+		mm_zfree(__the_poll_obj_zone, poll_obj);
+
 	_intranet_destroy_acceptor(aci);
 	return 0;
 }
 
 static long _net_destroy_acc(struct _acc_impl* aci)
 {
+	long rslt;
 	struct _inet_impl* inet = aci->_inet;
 
 	close(aci->_sock_fd);
@@ -630,18 +643,16 @@ error_ret:
 
 static long _intranet_destroy_acceptor(struct _acc_impl* aci)
 {
+	long rslt;
 	struct _inet_impl* inet = aci->_inet;
+	struct rbnode* rbn;
 
-	if(aci->_po_idx >= inet->_po_cnt)
-		goto error_ret;
+	rbn = rb_remove(&inet->_po_rbt, &aci->_obj->_rbn);
+	err_exit(!rbn, "intranet destoy acc failed: remove rb node");
 
-	if(inet->_po_fds[aci->_po_idx].fd == aci->_sock_fd && inet->_po_obj[aci->_po_idx] == aci)
-	{
-		inet->_po_fds[aci->_po_idx].fd = 0;
-		inet->_po_fds[aci->_po_idx].events = 0;
-		inet->_po_obj[aci->_po_idx] = 0;
-	}
+	mm_zfree(__the_poll_obj_zone, aci->_obj);
 
+	aci->_obj = 0;
 
 	return _net_destroy_acc(aci);
 error_ret:
@@ -717,22 +728,36 @@ error_ret:
 
 static struct _ses_impl* _intranet_create_session(struct _inet_impl* inet, int socket_fd)
 {
+	long rslt;
 	struct _ses_impl* sei;
-	struct epoll_event ev;
-
-	if(inet->_po_cnt >= inet->_the_net.cfg.max_fd_count)
-		goto error_ret;
+	struct _poll_obj* poll_obj;
 
 	sei = _net_create_session(inet, socket_fd);
 	err_exit(!sei, "intranet create session error.");
 
-	sei->_po_idx = inet->_po_cnt++;
-	inet->_po_fds[sei->_po_idx].fd = sei->_sock_fd;
-	inet->_po_fds[sei->_po_idx].events = POLLIN | POLLOUT | POLLRDHUP | POLLERR;
-	inet->_po_obj[sei->_po_idx] = sei;
+	poll_obj = mm_zalloc(__the_poll_obj_zone);
+	err_exit(!poll_obj, "intranet: create session  poll obj failed.");
+
+	sei->_obj = poll_obj;
+	poll_obj->_obj = sei;
+	poll_obj->_rbn.key = (void*)(long)sei->_sock_fd;
+
+	rslt = rb_insert(&inet->_po_rbt, &poll_obj->_rbn);
+	err_exit(rslt < 0, "intranet: insert session poll obj failed");
+
+	++inet->_po_cnt;
 
 	return sei;
 error_ret:
+	if(poll_obj)
+	{
+		struct rbnode* hot;
+		struct rbnode* rbn = rb_search(&inet->_po_rbt, (void*)(long)socket_fd, &hot);
+		struct _ses_impl* si = (struct _ses_impl*)((struct _poll_obj*)_conv_poll_obj_rbn(rbn))->_obj;
+		printf("si state: %d\n", si->_state);
+
+		mm_zfree(__the_poll_obj_zone, poll_obj);
+	}
 	if(sei)
 		_net_close(sei);
 	return 0;
@@ -814,7 +839,7 @@ static long _net_on_acc(struct _acc_impl* aci)
 	struct _inet_impl* inet = aci->_inet;
 
 	new_sock = accept4(aci->_sock_fd, (struct sockaddr*)&remote_addr, &addr_len, 0);
-	err_exit(new_sock < 0, "accept error.");
+	err_exit(new_sock < 0, "accept error: (%d:%s)", errno, strerror(errno));
 
 	err_exit(inet->_ses_list.size >= inet->_the_net.cfg.max_fd_count, "accept: connection full.");
 
@@ -926,16 +951,6 @@ static inline void _net_on_error(struct _ses_impl* sei)
 	_net_close(sei);
 }
 
-static void _set_outbit(struct _inet_impl* inet, struct _ses_impl* sei)
-{
-	inet->_po_fds[sei->_po_idx].events |= POLLOUT;
-}
-
-static void _clr_outbit(struct _inet_impl* inet, struct _ses_impl* sei)
-{
-	inet->_po_fds[sei->_po_idx].events &= ~(POLLOUT);
-}
-
 static long _net_try_send_all(struct _ses_impl* sei)
 {
 	int cnt = 0;
@@ -984,8 +999,6 @@ send_finish:
 		{
 			err_exit(errno != EWOULDBLOCK && errno != EAGAIN, "send error [%d : %s] <%p>", errno, strerror(errno), sei);
 
-			if(inet->_handler->__set_outbit_func)
-				(*inet->_handler->__set_outbit_func)(inet, sei);
 		}
 	}
 
@@ -1009,9 +1022,6 @@ static inline void _net_on_send(struct _ses_impl* sei)
 
 		if(cf)
 			(*cf)(&sei->_the_ses);
-
-		if(inet->_handler->__clr_outbit_func)
-			(*inet->_handler->__clr_outbit_func)(inet, sei);
 
 	}
 	_net_try_send_all(sei);
@@ -1052,16 +1062,19 @@ error_ret:
 
 static long _intranet_disconn(struct _ses_impl* sei)
 {
+	long rslt;
 	struct _inet_impl* inet = sei->_inet;
+	struct rbnode* rbn;
 
-	if(inet->_po_fds[sei->_po_idx].fd == sei->_sock_fd && inet->_po_obj[sei->_po_idx] == sei)
-	{
-		inet->_po_fds[sei->_po_idx].fd = 0;
-		inet->_po_fds[sei->_po_idx].events = 0;
-		inet->_po_obj[sei->_po_idx] = 0;
-	}
+	rbn = rb_remove(&inet->_po_rbt, sei->_obj->_rbn.key);
+	err_exit(!rbn, "intranet disconn: remove rb failed");
+
+	mm_zfree(__the_poll_obj_zone, sei->_obj);
+	sei->_obj = 0;
 
 	return 0;
+error_ret:
+	return -1;
 }
 
 static inline long _net_disconn(struct _ses_impl* sei)
@@ -1144,57 +1157,74 @@ error_ret:
 
 static long _intranet_run(struct _inet_impl* inet, int timeout)
 {
-	long rslt, cnt, proc_cnt = 0;
+	long rslt, cnt = 0;
+	struct pollfd pofds[inet->_po_cnt];
+	struct dlnode* dln;
+	struct _acc_impl* aci;
+	struct _ses_impl* sei;
+	struct rbnode* hot, *rbn;
+	struct _poll_obj* poll_obj;
 
-	cnt = poll(inet->_po_fds, inet->_po_cnt, timeout);
+	dln = inet->_acc_list.head.next;
+	while(dln != &inet->_acc_list.tail)
+	{
+		aci = _conv_acc_dln(dln);
+
+		pofds[cnt].fd = aci->_sock_fd;
+		pofds[cnt].events = POLLIN;
+		pofds[cnt].revents = 0;
+
+		++cnt;
+
+		dln = dln->next;
+	}
+
+	dln = inet->_ses_list.head.next;
+	while(dln != &inet->_ses_list.tail)
+	{
+		sei = _conv_ses_dln(dln);
+
+		pofds[cnt].fd = sei->_sock_fd;
+		pofds[cnt].events = POLLIN | POLLOUT | POLLRDHUP | POLLERR;
+		pofds[cnt].revents = 0;
+
+		++cnt;
+
+		dln = dln->next;
+	}
+
+	err_exit(cnt > inet->_po_cnt, "intranet run: overflow.");
+
+	cnt = poll(pofds, cnt, timeout);
 	if(cnt < 0) goto error_ret;
 
-	for(int i = 0; i < inet->_po_cnt && proc_cnt < cnt; ++i)
+	for(int i = 0; i < cnt; ++i)
 	{
-		if(inet->_po_fds[i].fd == 0)
-		{
-			int last = inet->_po_cnt - 1;
+		unsigned int type_info;
 
-			inet->_po_fds[i].fd = inet->_po_fds[last].fd;
-			inet->_po_fds[i].events = inet->_po_fds[last].events;
-			inet->_po_fds[i].revents = inet->_po_fds[last].revents;
-			inet->_po_obj[i] = inet->_po_obj[last];
+		rbn = rb_search(&inet->_po_rbt, (void*)(long)pofds[i].fd, &hot);
+		err_exit(!rbn, "intranet run: can not find fd: %d.", pofds[i].fd);
 
-			inet->_po_fds[last].fd = 0;
-			inet->_po_fds[last].events = 0;
-			inet->_po_fds[last].revents = 0;
-			inet->_po_obj[last] = 0;
+		poll_obj = _conv_poll_obj_rbn(rbn);
 
-			--inet->_po_cnt;
-
-			continue;
-		}
-
-		if(inet->_po_fds[i].revents == 0)
-			continue;
-
-		++proc_cnt;
-
-		unsigned int type_info = *(unsigned int*)(inet->_po_obj[i]);
+		type_info = *(unsigned int*)(poll_obj->_obj);
 
 		if(type_info == ACC_TYPE_INFO)
 		{
-			_net_on_acc((struct _acc_impl*)inet->_po_obj[i]);
+			_net_on_acc((struct _acc_impl*)poll_obj->_obj);
 		}
 		else if(type_info == SES_TYPE_INFO)
 		{
-			struct _ses_impl* sei = (struct _ses_impl*)inet->_po_obj[i];
+			struct _ses_impl* sei = (struct _ses_impl*)poll_obj->_obj;
 
-			if(inet->_po_fds[i].revents & POLLOUT)
+			if(pofds[i].revents & POLLOUT)
 				_net_on_send(sei);
-			if(inet->_po_fds[i].revents & POLLIN)
+			if(pofds[i].revents & POLLIN)
 				_net_on_recv(sei);
-			if(inet->_po_fds[i].revents & POLLERR)
+			if(pofds[i].revents & POLLERR)
 				_net_on_error(sei);
-
 		}
 
-		inet->_po_fds[i].revents = 0;
 	}
 
 	return 0;
@@ -1208,7 +1238,7 @@ struct session* net_connect(struct net_struct* net, unsigned int ip, unsigned sh
 	int new_sock, sock_opt;
 
 	struct _inet_impl* inet;
-	struct _ses_impl* sei;
+	struct _ses_impl* sei = 0;
 	struct sockaddr_in addr;
 
 	if(!net) goto error_ret;
