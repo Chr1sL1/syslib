@@ -14,7 +14,7 @@
 #define USR_TYPE_INFO (0x123123)
 #define MAX_LIVE_INTERVAL (10000)
 
-#define TEST_CONN_COUNT (1000)
+#define TEST_CONN_COUNT (10)
 
 static struct mmzone* __svr_session_zone = 0;
 static long __running = 1;
@@ -37,7 +37,7 @@ enum USR_SESSION_STATE
 
 static struct net_config __cfg =
 {
-	.max_fd_count = 2048,
+	.max_fd_count = 64,
 	.recv_buff_len = 1024,
 	.send_buff_len = 1024,
 };
@@ -243,6 +243,7 @@ static long run_connector(struct net_struct* net)
 	unsigned long r1 = 0, r2 = 0;
 	int send_len;
 	int pending_count = 0;
+	unsigned int ip = inet_addr("192.168.1.3");
 
 	char send_buf[net->cfg.send_buff_len];
 
@@ -257,7 +258,7 @@ static long run_connector(struct net_struct* net)
 
 			__conn_session[i].idx = i;
 
-			struct session* s = net_connect(net, inet_addr("192.168.1.3"), 7070);
+			struct session* s = net_connect(net, ip, 7070);
 			err_exit(!s, "connect failed [%d]", i);
 
 			net_bind_session_ops(s, &ops);
@@ -341,7 +342,7 @@ long net_test_server(int silent)
 		err_exit(!fp, "redirect stderr failed");
 	}
 
-	net = net_create(&__cfg, &ops, NT_INTERNET);
+	net = net_create(&__cfg, &ops, NT_INTRANET);
 	err_exit(!net, "create net failed.");
 
 	acc = net_create_acceptor(net, 0, 7070);
