@@ -1438,9 +1438,6 @@ int main(void)
 
 //	dbg_zone(1024 * 1024);
 
-//	dbg("%lu,%lu\n", is_2power(129), is_2power(64));
-
-
 //	test_ipc();
 
 
