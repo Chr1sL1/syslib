@@ -1414,8 +1414,35 @@ error_ret:
 
 #define dbg(format, ...) printf(format, __VA_ARGS__)
 
-
 extern long net_test_server(int);
+
+struct bit_set
+{
+	unsigned long bits[16];
+};
+
+void mydiv(int divend, int divisor, int* quotient, int* reminder)
+{
+	*quotient = divend / divisor;
+	*reminder = divend % divisor;
+}
+
+void set_bit(struct bit_set* bs, int bit)
+{
+	int idx, b_idx;
+	mydiv(bit, 64, &idx, &b_idx);
+
+	bs->bits[idx] |= (1LL << b_idx);
+}
+
+void clr_bit(struct bit_set* bs, int bit)
+{
+	int idx, b_idx;
+	mydiv(bit, 64, &idx, &b_idx);
+
+	bs->bits[idx] &= ~(1LL << b_idx);
+}
+
 
 int main(void)
 {
@@ -1426,6 +1453,10 @@ int main(void)
 //	unsigned long seed = 0;//time(0);
 	unsigned long seed = time(0);
 	srandom(seed);
+
+	struct bit_set bs;
+	memset(&bs, 0, sizeof(bs));
+	set_bit(&bs, 100);
 
 	rslt = init_mm(11);
 	if(rslt < 0) goto error_ret;
@@ -1472,7 +1503,8 @@ int main(void)
 //
 //
 //	test_rbtree(); 
-
+//	
+//
 	printf("this seed: %lu\n", seed);
 //	test_task();
 //	test_lst();

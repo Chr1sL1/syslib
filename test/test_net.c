@@ -243,7 +243,7 @@ static long run_connector(struct net_struct* net)
 	unsigned long r1 = 0, r2 = 0;
 	int send_len;
 	int pending_count = 0;
-	unsigned int ip = inet_addr("192.168.1.3");
+	unsigned int ip = inet_addr("192.168.2.82");
 
 	char send_buf[net->cfg.send_buff_len];
 
