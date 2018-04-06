@@ -11,17 +11,6 @@
 #define PGP_CHUNK_LABEL (0xbaba2121fdfd9696UL)
 #define HASH_COUNT		(256)
 
-#pragma pack(1)
-
-//struct _chunk_header
-//{
-//	unsigned long _chunck_label;
-//	unsigned long _addr_begin;
-//	unsigned long _addr_end;
-//};
-
-#pragma pack()
-
 struct _pg_node
 {
 	union

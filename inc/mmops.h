@@ -7,16 +7,24 @@ struct mm_config
 
 	union
 	{
+		// for mmpool
 		struct
 		{
 			unsigned int min_order;
 			unsigned int max_order;
 		};
 
+		// for pgpool
 		struct
 		{
 			unsigned int page_size;
 			unsigned int maxpg_count;
+		};
+
+		// for stkpool
+		struct
+		{
+			unsigned int stk_frm_size;
 		};
 	};
 };
