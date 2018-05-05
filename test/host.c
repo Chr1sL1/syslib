@@ -18,6 +18,7 @@
 #include "ipc.h"
 #include "mmspace.h"
 #include "net.h"
+#include "timer.h"
 #include <signal.h>
 #include <unistd.h>
 #include <string.h>
@@ -1443,6 +1444,37 @@ void clr_bit(struct bit_set* bs, int bit)
 	bs->bits[idx] &= ~(1LL << b_idx);
 }
 
+void test_timer_func(void* p)
+{
+	printf("trigger tick: %lu, tick: %lu\n", (unsigned long)p, dbg_current_tick());	
+}
+
+void test_timer(void)
+{
+	int rslt = 0;
+	rslt = init_timer();
+
+	err_exit(rslt < 0, "init timer failed.");
+
+
+	add_timer(1, test_timer_func, (void*)1);
+	add_timer(250, test_timer_func, (void*)250);
+	add_timer(256, test_timer_func, (void*)256);
+	add_timer(647, test_timer_func, (void*)647);
+	add_timer(18474, test_timer_func, (void*)18474);
+
+
+	while(1)
+	{
+		on_tick();
+	}
+
+error_ret:
+	return;
+
+}
+
+
 
 int main(void)
 {
@@ -1461,7 +1493,10 @@ int main(void)
 	rslt = init_mm(11);
 	if(rslt < 0) goto error_ret;
 
-	net_test_server(1);
+//	net_test_server(1);
+
+	test_timer();
+
 
 	mm_uninitialize();
 

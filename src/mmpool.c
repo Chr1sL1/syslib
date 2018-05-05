@@ -882,7 +882,7 @@ long mmp_check(struct mmpool* mmp)
 	for(long i = 0; i < mmpi->_cfg._free_list_count; ++i)
 	{
 		struct dlnode* dln = mmpi->_flh[i]._free_list.head.next;
-		printf("flh idx: [%ld], size: [%ld]\n", i, mmpi->_flh[i]._free_list.size);
+//		printf("flh idx: [%ld], size: [%ld]\n", i, mmpi->_flh[i]._free_list.size);
 		long block_size = _block_size_by_idx(mmpi, i);
 		while(dln != &mmpi->_flh[i]._free_list.tail)
 		{
@@ -928,7 +928,7 @@ long mmp_freelist_profile(struct mmpool* mmp)
 
 	for(long i = 0; i < mmpi->_cfg._free_list_count; ++i)
 	{
-		printf(">>> freelist [%ld], size [%ld].\n", i, mmpi->_flh[i]._free_list.size);
+//		printf(">>> freelist [%ld], size [%ld].\n", i, mmpi->_flh[i]._free_list.size);
 
 	}
 
