@@ -31,52 +31,17 @@ error_ret:
 
 unsigned long align_to_2power_top(unsigned long val)
 {
-	unsigned long ret = 0;
-	if(val == 0)
-		return 0;
-
-	asm("bsrq	%1, %%rcx\n\t"
-		"bsfq	%1, %%rdx\n\t"
-		"leaq	0x1(%%rcx), %%rsi\n\t"
-		"cmpq	%%rcx, %%rdx\n\t"
-		"cmovneq	%%rsi, %%rcx\n\t"
-		"movq	$1, %0\n\t"
-		"salq	%%cl, %0"
-		:"=r"(ret)
-		:"r"(val));
-
-	return ret;
+	return 1 << (log_2(val - 1) + 1);
 }
 
 unsigned long align_to_2power_floor(unsigned long val)
 {
-	unsigned long ret = 0;
-	if(val == 0)
-		return 0;
-
-	asm("bsrq	%1, %%rcx\n\t"
-		"movq	$1, %0\n\t"
-		"salq	%%cl, %0"
-		:"=r"(ret)
-		:"r"(val));
-
-	return ret;
+	return 1 << (log_2(val));
 }
 
 long is_2power(unsigned long val)
 {
-	unsigned long ret = 0;
-	if(val == 0)
-		return 1;
-
-	asm("bsrq	%1, %%rcx\n\t"
-		"bsfq	%1, %%rdx\n\t"
-		"cmpq	%%rcx, %%rdx\n\t"
-		"sete	%%al\n\t"
-		:"=a"(ret)
-		:"r"(val));
-
-	return ret;
+	return align_to_2power_top(val) == align_to_2power_floor(val);
 }
 
 unsigned long rdtsc(void)
