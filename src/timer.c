@@ -1,10 +1,16 @@
 #include "timer.h"
-#include "linked_list.h"
+#include "dlist.h"
+#include "misc.h"
+#include "mmspace.h"
+#include <stdio.h>
+
 
 #ifdef _WIN32
 #include <intrin.h>
 #pragma intrinsic(_BitScanReverse64)
 #endif
+
+#define TIMER_NODE_ZONE_NAME "timer_node_zone"
 
 #define TIMER_NODE_TYPE_MAGIC	(0x12341234)
 
@@ -22,82 +28,93 @@
 
 struct timer_node
 {
-	int32_t _magic;
+	int _magic;
 
-	uint64_t _run_tick;
+	unsigned long _run_tick;
 	timer_func_t _callback_func;
 	void* _func_param;
 
-	LINKED_LIST_NODE _lln;
+	struct dlnode _lln;
 };
 
 struct timer_wheel
 {
-	uint64_t _current_tick;
-	uint64_t _current_tv_set_idx;
-	CLinkedList _tv_set0[TV_SET0_SIZE];
-	CLinkedList _tv_set[TV_SET_CNT][TV_SET_SIZE];
+	unsigned long _current_tick;
+	unsigned long _current_tv_set_idx;
+	struct dlist _tv_set0[TV_SET0_SIZE];
+	struct dlist _tv_set[TV_SET_CNT][TV_SET_SIZE];
 };
 
-static timer_wheel __the_timer_wheel;
+static struct timer_wheel __the_timer_wheel;
+static struct mmzone* __the_timer_node_zone = 0;
 
-static int32_t __log2(unsigned long value)
+static inline int _timer_node_try_restore_zone(void)
 {
-	int32_t ret_code = 0;
-	unsigned long idx;
+	if(!__the_timer_node_zone)
+	{
+		__the_timer_node_zone = mm_search_zone(TIMER_NODE_ZONE_NAME);
+		if(!__the_timer_node_zone)
+		{
+			__the_timer_node_zone = mm_zcreate(TIMER_NODE_ZONE_NAME, sizeof(struct timer_node), 0, 0);
+			if(!__the_timer_node_zone) goto error_ret;
+		}
+		else
+		{
+			if(__the_timer_node_zone->obj_size != sizeof(struct timer_node))
+				goto error_ret;
+		}
+	}
 
-	PROCESS_ERROR(value > 0);
-
-#ifdef _WIN32
-	ret_code = _BitScanReverse64(&idx, value);
-	LOG_PROCESS_ERROR(ret_code > 0);
-#else
-	asm("bsrq	%1, %0":"=r"(idx) : "r"(value));
-#endif
-
-	return idx;
-Exit0:
 	return 0;
+error_ret:
+	return -1;
+
 }
 
-void init_timer(void)
+int init_timer(void)
 {
+	err_exit(_timer_node_try_restore_zone() < 0, "init_timer: restore zone failed.");
+
 	__the_timer_wheel._current_tick = 0;
 	__the_timer_wheel._current_tv_set_idx = 0;
 
-	for (int32_t i = 0; i < TV_SET0_SIZE; ++i)
+	for (int i = 0; i < TV_SET0_SIZE; ++i)
 	{
-		__the_timer_wheel._tv_set0[i].init();
+		lst_new(&__the_timer_wheel._tv_set0[i]);
 	}
 
-	for (int32_t i = 0; i < TV_SET_CNT; ++i)
+	for (int i = 0; i < TV_SET_CNT; ++i)
 	{
-		for (int32_t j = 0; j < TV_SET_SIZE; ++j)
+		for (int j = 0; j < TV_SET_SIZE; ++j)
 		{
-			__the_timer_wheel._tv_set[i][j].init();
+			lst_new(&__the_timer_wheel._tv_set[i][j]);
 		}
 	}
+
+	return 0;
+error_ret:
+	return -1;
 }
 
-static void _add_timer(timer_node* tn)
+static void _add_timer(struct timer_node* tn)
 {
-	int64_t diff_tick = tn->_run_tick - __the_timer_wheel._current_tick;
-	int64_t remain_tick = diff_tick - (TV_SET0_MASK - (__the_timer_wheel._current_tick & TV_SET0_MASK));
+	long diff_tick = tn->_run_tick - __the_timer_wheel._current_tick;
+	long remain_tick = diff_tick - (TV_SET0_MASK - (__the_timer_wheel._current_tick & TV_SET0_MASK));
 
 	if (remain_tick <= 0)
 	{
-		__the_timer_wheel._tv_set0[(__the_timer_wheel._current_tick + diff_tick) & TV_SET0_MASK].push_rear(&tn->_lln);
+		lst_push_back(&__the_timer_wheel._tv_set0[(__the_timer_wheel._current_tick + diff_tick) & TV_SET0_MASK], &tn->_lln);
 	}
 	else
 	{
-		int32_t tv_set_idx = __log2(remain_tick);
+		int tv_set_idx = log_2(remain_tick);
 
-		for (int32_t i = 0; i < TV_SET_CNT; ++i)
+		for (int i = 0; i < TV_SET_CNT; ++i)
 		{
 			if (tv_set_idx < TV_SET0_BITS + (i + 1) * TV_SET_BITS)
 			{
-				int32_t idx = remain_tick / (1UL << (TV_SET0_BITS + i * TV_SET_BITS));
-				__the_timer_wheel._tv_set[i][(__the_timer_wheel._current_tv_set_idx + idx) & TV_SETN_MASK].push_rear(&tn->_lln);
+				int idx = remain_tick / (1UL << (TV_SET0_BITS + i * TV_SET_BITS));
+				lst_push_back(&__the_timer_wheel._tv_set[i][(__the_timer_wheel._current_tv_set_idx + idx) & TV_SETN_MASK], &tn->_lln);
 				break;
 			}
 		}
@@ -105,88 +122,90 @@ static void _add_timer(timer_node* tn)
 }
 
 
-timer_handle_t add_timer(int32_t delay_tick, timer_func_t callback_func, void* param)
+timer_handle_t add_timer(int delay_tick, timer_func_t callback_func, void* param)
 {
-	timer_node* _node = NULL;
+	struct timer_node* _node = NULL;
 
-	LOG_PROCESS_ERROR(delay_tick > 0);
-	LOG_PROCESS_ERROR(callback_func);
+	err_exit(delay_tick <= 0, "add_timer: illegal param.");
+	err_exit(!callback_func, "add_timer: illegal param.");
 
-	_node = (timer_node*)malloc(sizeof(timer_node));
+	_node = mm_zalloc(__the_timer_node_zone);
+	err_exit(!_node, "add_timer: alloc timer node failed.");
 
 	_node->_magic = TIMER_NODE_TYPE_MAGIC;
 	_node->_run_tick = __the_timer_wheel._current_tick + delay_tick;
 	_node->_callback_func = callback_func;
 	_node->_func_param = param;
-	clear_list_node(&_node->_lln);
+	lst_clr(&_node->_lln);
 
 	_add_timer(_node);
 
 	return _node;
-Exit0:
-	return NULL;
+error_ret:
+	return 0;
 }
 
-static void _del_timer(timer_node* tn)
+static void _del_timer(struct timer_node* tn)
 {
-	CLinkedList::remove(&tn->_lln);
-	free(tn);
+	lst_remove_node(&tn->_lln);
+	mm_zfree(__the_timer_node_zone, tn);
 }
 
 void del_timer(timer_handle_t the_timer)
 {
-	timer_node* _node = (timer_node*)the_timer;
-	LOG_PROCESS_ERROR(_node);
-	LOG_PROCESS_ERROR(_node->_magic == TIMER_NODE_TYPE_MAGIC);
+	struct timer_node* _node = (struct timer_node*)the_timer;
+	err_exit(!_node, "del_timer null node.");
+	err_exit(_node->_magic != TIMER_NODE_TYPE_MAGIC, "del_timer type error.");
 
 	_del_timer(_node);
 
 	return;
-Exit0:
+error_ret:
 	return;
 }
 
 static void _casade(void)
 {
-	LINKED_LIST_NODE* node = __the_timer_wheel._tv_set[0][__the_timer_wheel._current_tv_set_idx].head().pNext;
-	while (node != &__the_timer_wheel._tv_set[0][__the_timer_wheel._current_tv_set_idx].rear())
+	struct dlnode* node = lst_first(&__the_timer_wheel._tv_set[0][__the_timer_wheel._current_tv_set_idx]);
+	while (node != lst_last(&__the_timer_wheel._tv_set[0][__the_timer_wheel._current_tv_set_idx]))
 	{
-		LINKED_LIST_NODE* cur_node = node;
-		node = node->pNext;
+		struct dlnode* cur_node = node;
+		node = node->next;
 
-		timer_node* tn = (timer_node*)((uint64_t)cur_node - (uint64_t)&((timer_node*)(0))->_lln);
+		struct timer_node* tn = (struct timer_node*)((unsigned long)cur_node - (unsigned long)&((struct timer_node*)(0))->_lln);
 
-		CLinkedList::remove(cur_node);
+		lst_remove(&__the_timer_wheel._tv_set[0][__the_timer_wheel._current_tv_set_idx], cur_node);
 
-		__the_timer_wheel._tv_set0[(tn->_run_tick - __the_timer_wheel._current_tick - 1) & TV_SET0_MASK].push_rear(cur_node);
+		lst_push_back(&__the_timer_wheel._tv_set0[(tn->_run_tick - __the_timer_wheel._current_tick - 1) & TV_SET0_MASK], cur_node);
 	}
 
-	for (int32_t i = 1; i < TV_SET_CNT; ++i)
+	for (int i = 1; i < TV_SET_CNT; ++i)
 	{
-		LINKED_LIST_NODE* node = __the_timer_wheel._tv_set[i][__the_timer_wheel._current_tv_set_idx].head().pNext;
-		while (node != &__the_timer_wheel._tv_set[i][__the_timer_wheel._current_tv_set_idx].rear())
+		struct dlnode* node = lst_first(&__the_timer_wheel._tv_set[i][__the_timer_wheel._current_tv_set_idx]);
+		while (node != lst_last(&__the_timer_wheel._tv_set[i][__the_timer_wheel._current_tv_set_idx]))
 		{
-			LINKED_LIST_NODE* cur_node = node;
-			node = node->pNext;
+			struct dlnode* cur_node = node;
+			node = node->next;
 
-			timer_node* tn = (timer_node*)((uint64_t)cur_node - (uint64_t)&((timer_node*)(0))->_lln);
+			struct timer_node* tn = (struct timer_node*)((unsigned long)cur_node - (unsigned long)&((struct timer_node*)(0))->_lln);
 
-			CLinkedList::remove(cur_node);
+//			CLinkedList::remove(cur_node);
+			lst_remove(&__the_timer_wheel._tv_set[i][__the_timer_wheel._current_tv_set_idx], cur_node);
 
-			__the_timer_wheel._tv_set[i - 1][(tn->_run_tick - __the_timer_wheel._current_tick) / (1UL << (TV_SET0_BITS + (i - 1) * TV_SET_BITS)) + 1].push_rear(cur_node);
+			lst_push_back(&__the_timer_wheel._tv_set[i - 1][(tn->_run_tick - __the_timer_wheel._current_tick) / (1UL << (TV_SET0_BITS + (i - 1) * TV_SET_BITS)) + 1], cur_node);
 		}
 	}
 }
 
 void on_tick(void)
 {
-	LINKED_LIST_NODE* node = __the_timer_wheel._tv_set0[__the_timer_wheel._current_tick & TV_SET0_MASK].head().pNext;
-	while (node != &__the_timer_wheel._tv_set0[__the_timer_wheel._current_tick & TV_SET0_MASK].rear())
+	struct dlnode* node = lst_first(&__the_timer_wheel._tv_set0[__the_timer_wheel._current_tick & TV_SET0_MASK]);
+	while (node != lst_last(&__the_timer_wheel._tv_set0[__the_timer_wheel._current_tick & TV_SET0_MASK]))
 	{
-		LINKED_LIST_NODE* cur_node = node;
-		node = node->pNext;
+		struct dlnode* cur_node = node;
+		node = node->next;
 
-		timer_node* tn = (timer_node*)((uint64_t)cur_node - (uint64_t)&((timer_node*)(0))->_lln);
+		struct timer_node* tn = (struct timer_node*)((unsigned long)cur_node - (unsigned long)&((struct timer_node*)(0))->_lln);
 
 		(*tn->_callback_func)(tn->_func_param);
 
@@ -202,7 +221,7 @@ void on_tick(void)
 	++__the_timer_wheel._current_tick;
 }
 
-uint64_t dbg_current_tick(void)
+unsigned long dbg_current_tick(void)
 {
 	return __the_timer_wheel._current_tick;
 }

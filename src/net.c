@@ -841,7 +841,7 @@ static long _net_on_acc(struct _acc_impl* aci)
 	new_sock = accept4(aci->_sock_fd, (struct sockaddr*)&remote_addr, &addr_len, 0);
 	err_exit(new_sock < 0, "accept error: (%d:%s)", errno, strerror(errno));
 
-	err_exit(inet->_ses_list.size >= inet->_the_net.cfg.max_fd_count, "accept: connection full.");
+//	err_exit(inet->_ses_list.size >= inet->_the_net.cfg.max_fd_count, "accept: connection full.");
 
 	sei = (*inet->_handler->__create_ses_func)(inet, new_sock);
 	err_exit(!sei, "accept: create session error.");
@@ -1304,7 +1304,8 @@ inline long net_session_count(struct net_struct* net)
 
 	inet = _conv_inet_impl(net);
 
-	return inet->_ses_list.size;
+	return 0;
+//	return inet->_ses_list.size;
 error_ret:
 	return -1;
 }
