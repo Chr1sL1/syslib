@@ -59,7 +59,7 @@ extern void asm_run_task(struct _utask_impl* tsk, void* udata);
 extern void asm_yield_task(struct _utask_impl* tsk);
 extern void asm_resume_task(struct _utask_impl* tsk);
 
-static struct mmzone* __utsk_zone = 0;
+static struct mmcache* __utsk_zone = 0;
 
 static struct _utask_impl* _conv_task(struct utask* tsk)
 {
@@ -75,9 +75,9 @@ struct utask* utsk_create(long stack_size, task_function tfunc)
 	if(!tfunc) goto error_ret;
 
 	if(!__utsk_zone)
-		__utsk_zone = mm_zcreate("sys_utsk", sizeof(struct _utask_impl), 0, 0);
+		__utsk_zone = mm_cache_create("sys_utsk", sizeof(struct _utask_impl), 0, 0);
 
-	tsk = mm_zalloc(__utsk_zone);
+	tsk = mm_cache_alloc(__utsk_zone);
 	if(!tsk) goto error_ret;
 
 	tsk->_utsk.stk_size = stack_size;
@@ -91,7 +91,7 @@ struct utask* utsk_create(long stack_size, task_function tfunc)
 	return &tsk->_utsk;
 error_ret:
 	if(tsk)
-		 mm_zfree(__utsk_zone, tsk);
+		 mm_cache_free(__utsk_zone, tsk);
 	return 0;
 }
 
@@ -103,7 +103,7 @@ void utsk_destroy(struct utask* tsk)
 	if(t->_utsk.stk)
 		mm_free(t->_utsk.stk);
 
-	mm_zfree(__utsk_zone, t);
+	mm_cache_free(__utsk_zone, t);
 
 error_ret:
 	return;

@@ -14,7 +14,7 @@ struct _ring_buf_impl
 	volatile long _w_offset;
 };
 
-static struct mmzone* __the_ring_buf_zone = 0;
+static struct mmcache* __the_ring_buf_zone = 0;
 
 static inline struct _ring_buf_impl* _conv_rb(struct ring_buf* rb)
 {
@@ -28,7 +28,7 @@ static inline long _rbuf_try_restore_zone(void)
 		__the_ring_buf_zone = mm_search_zone(RBUF_ZONE_NAME);
 		if(!__the_ring_buf_zone)
 		{
-			__the_ring_buf_zone = mm_zcreate(RBUF_ZONE_NAME, sizeof(struct _ring_buf_impl), 0, 0);
+			__the_ring_buf_zone = mm_cache_create(RBUF_ZONE_NAME, sizeof(struct _ring_buf_impl), 0, 0);
 			if(!__the_ring_buf_zone) goto error_ret;
 		}
 		else
@@ -56,7 +56,7 @@ struct ring_buf* rbuf_create(void* addr, long size)
 	rslt = _rbuf_try_restore_zone();
 	if(rslt < 0) goto error_ret;
 
-	rbi = mm_zalloc(__the_ring_buf_zone);
+	rbi = mm_cache_alloc(__the_ring_buf_zone);
 	if(!rbi) goto error_ret;
 
 	rbi->_r_offset = 0;
@@ -92,7 +92,7 @@ long rbuf_destroy(struct ring_buf* rbuf)
 
 	rbi = _conv_rb(rbuf);
 
-	return mm_zfree(__the_ring_buf_zone, rbi);
+	return mm_cache_free(__the_ring_buf_zone, rbi);
 error_ret:
 	return -1;
 }

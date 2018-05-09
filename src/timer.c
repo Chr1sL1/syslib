@@ -46,7 +46,7 @@ struct timer_wheel
 };
 
 static struct timer_wheel __the_timer_wheel;
-static struct mmzone* __the_timer_node_zone = 0;
+static struct mmcache* __the_timer_node_zone = 0;
 
 static inline int _timer_node_try_restore_zone(void)
 {
@@ -55,7 +55,7 @@ static inline int _timer_node_try_restore_zone(void)
 		__the_timer_node_zone = mm_search_zone(TIMER_NODE_ZONE_NAME);
 		if(!__the_timer_node_zone)
 		{
-			__the_timer_node_zone = mm_zcreate(TIMER_NODE_ZONE_NAME, sizeof(struct timer_node), 0, 0);
+			__the_timer_node_zone = mm_cache_create(TIMER_NODE_ZONE_NAME, sizeof(struct timer_node), 0, 0);
 			if(!__the_timer_node_zone) goto error_ret;
 		}
 		else
@@ -129,7 +129,7 @@ timer_handle_t add_timer(int delay_tick, timer_func_t callback_func, void* param
 	err_exit(delay_tick <= 0, "add_timer: illegal param.");
 	err_exit(!callback_func, "add_timer: illegal param.");
 
-	_node = mm_zalloc(__the_timer_node_zone);
+	_node = mm_cache_alloc(__the_timer_node_zone);
 	err_exit(!_node, "add_timer: alloc timer node failed.");
 
 	_node->_magic = TIMER_NODE_TYPE_MAGIC;
@@ -148,7 +148,7 @@ error_ret:
 static void _del_timer(struct timer_node* tn)
 {
 	lst_remove_node(&tn->_lln);
-	mm_zfree(__the_timer_node_zone, tn);
+	mm_cache_free(__the_timer_node_zone, tn);
 }
 
 void del_timer(timer_handle_t the_timer)

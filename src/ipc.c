@@ -14,7 +14,7 @@ struct _ipc_peer_impl
 	struct ring_buf* _rb;
 };
 
-static struct mmzone* __the_ipc_zone = 0;
+static struct mmcache* __the_ipc_zone = 0;
 
 static inline struct _ipc_peer_impl* _conv_peer(struct ipc_peer* pr)
 {
@@ -28,7 +28,7 @@ static inline long _ipc_try_restore_zone(void)
 		__the_ipc_zone = mm_search_zone(IPC_ZONE_NAME);
 		if(!__the_ipc_zone)
 		{
-			__the_ipc_zone = mm_zcreate(IPC_ZONE_NAME, sizeof(struct _ipc_peer_impl), 0, 0);
+			__the_ipc_zone = mm_cache_create(IPC_ZONE_NAME, sizeof(struct _ipc_peer_impl), 0, 0);
 			if(!__the_ipc_zone) goto error_ret;
 		}
 		else
@@ -59,7 +59,7 @@ struct ipc_peer* ipc_create(int channel_id, unsigned long buffer_size, int use_h
 	rslt = _ipc_try_restore_zone();
 	if(rslt < 0) goto error_ret;
 
-	ipi = mm_zalloc(__the_ipc_zone);
+	ipi = mm_cache_alloc(__the_ipc_zone);
 	if(!ipi) goto error_ret;
 
 	sub_key.ipc_channel = channel_id;
@@ -88,7 +88,7 @@ error_ret:
 		if(ipi->_shb)
 			shmm_destroy(ipi->_shb);
 
-		mm_zfree(__the_ipc_zone, ipi);
+		mm_cache_free(__the_ipc_zone, ipi);
 	}
 	return 0;
 }
@@ -108,7 +108,7 @@ struct ipc_peer* ipc_link(int channel_id)
 	rslt = _ipc_try_restore_zone();
 	if(rslt < 0) goto error_ret;
 
-	ipi = mm_zalloc(__the_ipc_zone);
+	ipi = mm_cache_alloc(__the_ipc_zone);
 	if(!ipi) goto error_ret;
 
 	sub_key.ipc_channel = channel_id;
@@ -137,7 +137,7 @@ error_ret:
 		if(ipi->_shb)
 			shmm_close(ipi->_shb);
 
-		mm_zfree(__the_ipc_zone, ipi);
+		mm_cache_free(__the_ipc_zone, ipi);
 	}
 	return 0;
 }

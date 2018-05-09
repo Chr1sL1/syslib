@@ -16,7 +16,7 @@
 
 #define TEST_CONN_COUNT (10)
 
-static struct mmzone* __svr_session_zone = 0;
+static struct mmcache* __svr_session_zone = 0;
 static long __running = 1;
 static unsigned long __start_time = 0;
 static unsigned long __time_val = 0;
@@ -104,7 +104,7 @@ static long _restore_zone(void)
 	if(__svr_session_zone && __svr_session_zone->obj_size != sizeof(struct svr_session))
 		goto error_ret;
 
-	__svr_session_zone = mm_zcreate(SVR_SESSION_ZONE_NAME, sizeof(struct svr_session), _svr_session_ctor, _svr_session_dtor);
+	__svr_session_zone = mm_cache_create(SVR_SESSION_ZONE_NAME, sizeof(struct svr_session), _svr_session_ctor, _svr_session_dtor);
 
 	if(!__svr_session_zone)
 		goto error_ret;
@@ -119,7 +119,7 @@ static long on_acc(struct acceptor* acc, struct session* se)
 	long rslt;
 	struct svr_session* ss;
 
-	ss = mm_zalloc(__svr_session_zone);
+	ss = mm_cache_alloc(__svr_session_zone);
 	err_exit(!ss, "on_acc alloc session failed.");
 	ss->s = se;
 	se->usr_ptr = ss;
@@ -136,7 +136,7 @@ static long on_server_disconn(struct session* se)
 
 	ss->s = 0;
 
-	rslt = mm_zfree(__svr_session_zone, ss);
+	rslt = mm_cache_free(__svr_session_zone, ss);
 	err_exit(rslt < 0, "on_disconn free session failed.");
 
 	se->usr_ptr = 0;
@@ -243,7 +243,7 @@ static long run_connector(struct net_struct* net)
 	unsigned long r1 = 0, r2 = 0;
 	int send_len;
 	int pending_count = 0;
-	unsigned int ip = inet_addr("192.168.2.82");
+	unsigned int ip = inet_addr("192.168.56.56");
 
 	char send_buf[net->cfg.send_buff_len];
 

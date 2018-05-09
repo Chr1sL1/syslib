@@ -1251,7 +1251,7 @@ void test_mm(void)
 	void* p;
 
 	struct mm_space_config cfg;
-	struct mmzone* mmz;
+	struct mmcache* mmz;
 
 	cfg.sys_shmm_key = 103;
 	cfg.try_huge_page = 0;
@@ -1274,7 +1274,7 @@ void test_mm(void)
 		.maxpg_count = 10,
 	};
 
-	cfg.mm_cfg[MM_AREA_ZONE] = (struct mm_config)
+	cfg.mm_cfg[MM_AREA_CACHE] = (struct mm_config)
 	{
 		.total_size = 20 * 1024 * 1024,
 		.page_size = 0x1000,
@@ -1291,15 +1291,15 @@ void test_mm(void)
 	rslt = mm_initialize(&cfg);
 	if(rslt < 0) goto error_ret;
 
-	mmz = mm_zcreate("test_mm", 385, 0, 0);
+	mmz = mm_cache_create("test_mm", 385, 0, 0);
 	if(!mmz) goto error_ret;
 
 	mmz = mm_search_zone("test_mm");
 
-	p = mm_zalloc(mmz);
+	p = mm_cache_alloc(mmz);
 	if(!p) goto error_ret;
 
-	rslt = mm_zfree(mmz, p);
+	rslt = mm_cache_free(mmz, p);
 	if(rslt < 0) goto error_ret;
 
 	test_task();
@@ -1390,7 +1390,7 @@ long init_mm(int key)
 		.maxpg_count = 10,
 	};
 
-	cfg.mm_cfg[MM_AREA_ZONE] = (struct mm_config)
+	cfg.mm_cfg[MM_AREA_CACHE] = (struct mm_config)
 	{
 		.total_size = 200 * 1024 * 1024,
 		.page_size = 0x1000,
@@ -1493,10 +1493,9 @@ int main(void)
 	rslt = init_mm(11);
 	if(rslt < 0) goto error_ret;
 
-//	net_test_server(1);
+	net_test_server(1);
 
-	test_timer();
-
+//	test_timer();
 
 	mm_uninitialize();
 

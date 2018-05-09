@@ -148,9 +148,9 @@ static struct linger __linger_option =
 	.l_linger = 4,
 };
 
-static struct mmzone* __the_acc_zone = 0;
-static struct mmzone* __the_ses_zone = 0;
-static struct mmzone* __the_poll_obj_zone = 0;
+static struct mmcache* __the_acc_zone = 0;
+static struct mmcache* __the_ses_zone = 0;
+static struct mmcache* __the_poll_obj_zone = 0;
 
 static long _internet_init(struct _inet_impl* inet);
 static long _intranet_init(struct _inet_impl* inet);
@@ -351,7 +351,7 @@ static inline long _net_try_restore_zones(void)
 		__the_acc_zone = mm_search_zone(NET_ACC_ZONE_NAME);
 		if(!__the_acc_zone)
 		{
-			__the_acc_zone = mm_zcreate(NET_ACC_ZONE_NAME, sizeof(struct _acc_impl), 0, 0);
+			__the_acc_zone = mm_cache_create(NET_ACC_ZONE_NAME, sizeof(struct _acc_impl), 0, 0);
 			err_exit(!__the_acc_zone, "restore acc zone failed.");
 		}
 		else
@@ -365,7 +365,7 @@ static inline long _net_try_restore_zones(void)
 		__the_ses_zone = mm_search_zone(NET_SES_ZONE_NAME);
 		if(!__the_ses_zone)
 		{
-			__the_ses_zone = mm_zcreate(NET_SES_ZONE_NAME, sizeof(struct _ses_impl), _sei_ctor, _sei_dtor);
+			__the_ses_zone = mm_cache_create(NET_SES_ZONE_NAME, sizeof(struct _ses_impl), _sei_ctor, _sei_dtor);
 			err_exit(!__the_ses_zone, "restore ses zone failed.");
 		}
 		else
@@ -379,7 +379,7 @@ static inline long _net_try_restore_zones(void)
 		__the_poll_obj_zone = mm_search_zone(NET_POLL_OBJ_ZONE);
 		if(!__the_poll_obj_zone)
 		{
-			__the_poll_obj_zone = mm_zcreate(NET_POLL_OBJ_ZONE, sizeof(struct _poll_obj), _poll_obj_ctor, 0);
+			__the_poll_obj_zone = mm_cache_create(NET_POLL_OBJ_ZONE, sizeof(struct _poll_obj), _poll_obj_ctor, 0);
 			err_exit(!__the_poll_obj_zone, "restore poll obj zone failed.");
 		}
 		else
@@ -523,7 +523,7 @@ static struct _acc_impl* _net_create_acc(struct _inet_impl* inet, unsigned int i
 	struct _acc_impl* aci;
 	struct sockaddr_in addr;
 
-	aci = mm_zalloc(__the_acc_zone);
+	aci = mm_cache_alloc(__the_acc_zone);
 	if(!aci) goto error_ret;
 
 	aci->_sock_fd = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, IPPROTO_TCP);
@@ -593,7 +593,7 @@ static struct _acc_impl* _intranet_create_acceptor(struct _inet_impl* inet, unsi
 	aci = _net_create_acc(inet, ip, port);
 	err_exit(!aci, "intranet: net create acc failed.");
 
-	poll_obj = mm_zalloc(__the_poll_obj_zone);
+	poll_obj = mm_cache_alloc(__the_poll_obj_zone);
 	err_exit(!poll_obj, "intranet: create poll obj failed.");
 
 	aci->_obj = poll_obj;
@@ -608,7 +608,7 @@ static struct _acc_impl* _intranet_create_acceptor(struct _inet_impl* inet, unsi
 	return aci;
 error_ret:
 	if(poll_obj)
-		mm_zfree(__the_poll_obj_zone, poll_obj);
+		mm_cache_free(__the_poll_obj_zone, poll_obj);
 
 	_intranet_destroy_acceptor(aci);
 	return 0;
@@ -622,7 +622,7 @@ static long _net_destroy_acc(struct _acc_impl* aci)
 	close(aci->_sock_fd);
 	aci->_type_info = 0;
 
-	return mm_zfree(__the_acc_zone, aci);
+	return mm_cache_free(__the_acc_zone, aci);
 error_ret:
 	return -1;
 }
@@ -650,7 +650,7 @@ static long _intranet_destroy_acceptor(struct _acc_impl* aci)
 	rbn = rb_remove(&inet->_po_rbt, &aci->_obj->_rbn);
 	err_exit(!rbn, "intranet destoy acc failed: remove rb node");
 
-	mm_zfree(__the_poll_obj_zone, aci->_obj);
+	mm_cache_free(__the_poll_obj_zone, aci->_obj);
 
 	aci->_obj = 0;
 
@@ -666,7 +666,7 @@ static struct _ses_impl* _net_create_session(struct _inet_impl* inet, int socket
 	struct _ses_impl* sei = 0;
 	struct timeval to;
 
-	sei = mm_zalloc(__the_ses_zone);
+	sei = mm_cache_alloc(__the_ses_zone);
 	err_exit(!sei, "_net_create_session alloc session error.");
 
 	sei->_sock_fd = socket_fd;
@@ -735,7 +735,7 @@ static struct _ses_impl* _intranet_create_session(struct _inet_impl* inet, int s
 	sei = _net_create_session(inet, socket_fd);
 	err_exit(!sei, "intranet create session error.");
 
-	poll_obj = mm_zalloc(__the_poll_obj_zone);
+	poll_obj = mm_cache_alloc(__the_poll_obj_zone);
 	err_exit(!poll_obj, "intranet: create session  poll obj failed.");
 
 	sei->_obj = poll_obj;
@@ -756,7 +756,7 @@ error_ret:
 		struct _ses_impl* si = (struct _ses_impl*)((struct _poll_obj*)_conv_poll_obj_rbn(rbn))->_obj;
 		printf("si state: %d\n", si->_state);
 
-		mm_zfree(__the_poll_obj_zone, poll_obj);
+		mm_cache_free(__the_poll_obj_zone, poll_obj);
 	}
 	if(sei)
 		_net_close(sei);
@@ -889,7 +889,7 @@ static long _net_close(struct _ses_impl* sei)
 
 	sei->_state = _SES_CLOSED;
 
-	return mm_zfree(__the_ses_zone, sei);
+	return mm_cache_free(__the_ses_zone, sei);
 error_ret:
 	return -1;
 }
@@ -1069,7 +1069,7 @@ static long _intranet_disconn(struct _ses_impl* sei)
 	rbn = rb_remove(&inet->_po_rbt, sei->_obj->_rbn.key);
 	err_exit(!rbn, "intranet disconn: remove rb failed");
 
-	mm_zfree(__the_poll_obj_zone, sei->_obj);
+	mm_cache_free(__the_poll_obj_zone, sei->_obj);
 	sei->_obj = 0;
 
 	return 0;
