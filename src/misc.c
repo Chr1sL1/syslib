@@ -29,19 +29,19 @@ error_ret:
 	return -1;
 }
 
-unsigned long align_to_2power_top(unsigned long val)
+unsigned long round_up_2power(unsigned long val)
 {
 	return 1 << (log_2(val - 1) + 1);
 }
 
-unsigned long align_to_2power_floor(unsigned long val)
+unsigned long round_down_2power(unsigned long val)
 {
 	return 1 << (log_2(val));
 }
 
 long is_2power(unsigned long val)
 {
-	return align_to_2power_top(val) == align_to_2power_floor(val);
+	return round_up_2power(val) == round_down_2power(val);
 }
 
 unsigned long rdtsc(void)

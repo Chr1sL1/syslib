@@ -13,8 +13,8 @@
 	} while(0);
 
 
-unsigned long align_to_2power_top(unsigned long val);
-unsigned long align_to_2power_floor(unsigned long val);
+unsigned long round_up_2power(unsigned long val);
+unsigned long round_down_2power(unsigned long val);
 
 unsigned long rdtsc(void);
 unsigned long log_2(unsigned long val);

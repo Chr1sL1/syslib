@@ -13,5 +13,5 @@ add_compile_options(-g)
 
 add_library(syslib STATIC ${lib_src_list})
 
-set(CMAKE_INSTALL_PREFIX ../lib)
-install(TARGETS syslib ARCHIVE DESTINATION lib)
+#set(CMAKE_INSTALL_PREFIX ../lib)
+#install(TARGETS syslib ARCHIVE DESTINATION lib)

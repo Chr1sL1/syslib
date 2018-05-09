@@ -230,14 +230,14 @@ static inline struct _block_head* _next_block(struct _block_head* bh)
 static inline long _normalize_payload_size(long payload_size)
 {
 	long blk_size = _block_size_by_payload(payload_size);
-	blk_size = align_to_2power_top(blk_size);
+	blk_size = round_up_2power(blk_size);
 	return _payload_size(blk_size);
 }
 
 static inline long _normalize_block_size(long payload_size)
 {
 	long blk_size = _block_size_by_payload(payload_size);
-	blk_size = align_to_2power_top(blk_size);
+	blk_size = round_up_2power(blk_size);
 
 	return blk_size;
 }
@@ -416,7 +416,7 @@ static long _try_spare_block(struct _mmpool_impl* mmpi, struct _block_head* bh, 
 	offset = (long)bh->_block_size - HEAD_TAIL_SIZE - payload_size;
 
 	if(offset > 0)
-		offset = align_to_2power_floor(offset);
+		offset = round_down_2power(offset);
 
 	if(offset >= _block_size(mmpi->_cfg._min_block_order))
 	{
