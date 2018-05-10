@@ -543,9 +543,13 @@ static long _mm_create_section(struct _mm_space_impl* mm, int ar_type)
 
 	ar = &mm->_area_list[ar_type];
 
+	addr_begin = shmm_begin_addr(shm);
+	err_exit(!addr_begin, "shmm begin addr error.");
+
 	lst_new(&ar->_section_list);
 	
 	rb_fillnew(&shm->rb_node);
+	shm->rb_node.key = addr_begin;
 	rslt = rb_insert(&mm->_all_section_tree, &shm->rb_node);
 	err_exit(rslt < 0, "shmm rb insert error.");
 
@@ -553,8 +557,6 @@ static long _mm_create_section(struct _mm_space_impl* mm, int ar_type)
 	rslt = lst_push_back(&ar->_section_list, &shm->lst_node);
 	err_exit(rslt < 0, "shmm link error.");
 
-	addr_begin = shmm_begin_addr(shm);
-	err_exit(!addr_begin, "shmm begin addr error.");
 
 	sec = (struct _mm_section_impl*)addr_begin;
 
@@ -812,7 +814,7 @@ long mm_free(void* p)
 	sec = _get_section(shm);
 
 	rslt = (*__mm_area_ops[sec->_area_type]->free_func)(sec->_allocator, p);
-	if(!rslt) goto error_ret;
+	if(rslt < 0) goto error_ret;
 
 	return rslt;
 error_ret:

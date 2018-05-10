@@ -308,8 +308,10 @@ long rb_insert(struct rbtree* t, struct rbnode* node)
 
 		if(comp_ret < 0)
 			hot->lchild = node;
-		else
+		else if(comp_ret > 0)
 			hot->rchild = node;
+		else
+			goto error_ret;
 
 		_set_parent(node, hot);
 		_fix_rr(t, node);

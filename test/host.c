@@ -1496,7 +1496,7 @@ int main(void)
 	memset(&bs, 0, sizeof(bs));
 	set_bit(&bs, 100);
 
-	rslt = init_mm(30);
+	rslt = init_mm(33);
 	if(rslt < 0) goto error_ret;
 
 //	net_test_server(1);
