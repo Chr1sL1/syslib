@@ -222,7 +222,7 @@ void tfun(struct utask* t, void* p)
 void test_task(void)
 {
 	unsigned long r1 = 0, r2 = 0;
-	struct utask* tsk = utsk_create(1024, tfun);
+	struct utask* tsk = utsk_create(tfun);
 	if(!tsk) goto error_ret;
 
 	for(int i = 0; i < sizeof(test_arr) / sizeof(long); i++)
@@ -1404,6 +1404,12 @@ long init_mm(int key)
 		.max_order = 16,
 	};
 
+	cfg.mm_cfg[MM_AREA_STACK] = (struct mm_config)
+	{
+		.total_size = 50 * 1024,
+		.stk_frm_size = 8192,
+	};
+
 	rslt = mm_initialize(&cfg);
 	if(rslt < 0) goto error_ret;
 
@@ -1490,11 +1496,12 @@ int main(void)
 	memset(&bs, 0, sizeof(bs));
 	set_bit(&bs, 100);
 
-	rslt = init_mm(11);
+	rslt = init_mm(19);
 	if(rslt < 0) goto error_ret;
 
-	net_test_server(1);
+//	net_test_server(1);
 
+	test_task();
 //	test_timer();
 
 	mm_uninitialize();

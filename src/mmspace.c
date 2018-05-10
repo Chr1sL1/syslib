@@ -13,7 +13,7 @@
 #include <sys/ipc.h>
 
 #define MM_LABEL (0x6666666666666666UL)
-#define SLAB_LABEL (0x2222222222222222UL)
+#define SLAB_LABEL (0x22222222UL)
 #define CACHE_OBJ_COUNT (32)
 #define CACHE_OBJ_COUNT_MAX (64)
 #define ZONE_NAME_LEN (32)
@@ -83,6 +83,7 @@ static struct _mm_space_impl* __the_mmspace = 0;
 
 extern struct mm_ops __mmp_ops;
 extern struct mm_ops __pgp_ops;
+extern struct mm_ops __stkp_ops;
 
 static struct mm_ops* __mm_area_ops[MM_AREA_COUNT] =
 {
@@ -90,6 +91,7 @@ static struct mm_ops* __mm_area_ops[MM_AREA_COUNT] =
 	[MM_AREA_PAGE] = &__pgp_ops,
 	[MM_AREA_CACHE] = &__pgp_ops,
 	[MM_AREA_PERSIS] = &__mmp_ops,
+	[MM_AREA_STACK] = &__stkp_ops,
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -99,12 +101,13 @@ static struct mm_ops* __mm_area_ops[MM_AREA_COUNT] =
 
 struct _mm_cache
 {
-	unsigned long _slab_label;
 	struct _mmcache_impl* _cache;
 	struct dlnode _list_node;
 
-	int _free_count;
-	int _obj_count;
+	unsigned int _slab_label;
+	unsigned short _free_count;
+	unsigned short _obj_count;
+
 	unsigned long _alloc_bits;
 
 	void* _obj_ptr;
@@ -814,5 +817,11 @@ long mm_free(void* p)
 	return rslt;
 error_ret:
 	return -1;
+}
+
+const struct mm_space_config* mm_get_cfg(void)
+{
+	return &__the_mmspace->_cfg;
+
 }
 

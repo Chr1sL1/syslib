@@ -37,6 +37,7 @@ enum MM_AREA_TYPE
 	MM_AREA_PAGE,						//< page-aligned memory block
 	MM_AREA_CACHE,						//< for mmcache object
 	MM_AREA_PERSIS,						//< for persistent data
+	MM_AREA_STACK,						//< for persistent data
 
 	MM_AREA_COUNT,
 };
@@ -62,6 +63,8 @@ struct mmcache* mm_search_zone(const char* zone_name);
 
 void* mm_alloc(unsigned long size);
 void* mm_area_alloc(unsigned long size, int area_type);
+
+const struct mm_space_config* mm_get_cfg(void);
 
 long mm_free(void* p);
 

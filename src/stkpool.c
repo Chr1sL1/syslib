@@ -32,6 +32,42 @@ struct _stkp_impl
 	struct _stkp_node _node_pool[0];
 };
 
+
+static void* __stkp_create_agent(void* addr, struct mm_config* cfg)
+{
+	return stkp_create(addr, cfg);
+}
+
+static void* __stkp_load_agent(void* addr)
+{
+	return stkp_load(addr);
+}
+
+static void __stkp_destroy_agent(void* alloc)
+{
+	stkp_destroy((struct stkpool*)alloc);
+}
+
+static void* __stkp_alloc_agent(void* alloc, unsigned long size)
+{
+	return stkp_alloc((struct stkpool*)alloc);
+}
+
+static long __stkp_free_agent(void* alloc, void* p)
+{
+	return stkp_free((struct stkpool*)alloc, p);
+}
+
+struct mm_ops __stkp_ops =
+{
+	.create_func = __stkp_create_agent,
+	.load_func = __stkp_load_agent,
+	.destroy_func = __stkp_destroy_agent,
+
+	.alloc_func = __stkp_alloc_agent,
+	.free_func = __stkp_free_agent,
+};
+
 static inline void _set_payload(struct _stkp_node* node, void* payload)
 {
 	node->_payload_addr = (void*)((unsigned long)payload | node->using);
@@ -69,11 +105,11 @@ struct _stkp_impl* _stkp_init(void* addr, unsigned long total_size, unsigned int
 	cur_ptr = move_ptr_align8(addr, sizeof(struct _stkp_impl));
 
 	stkpi->_sys_pg_size = sysconf(_SC_PAGESIZE);
-	stkpi->_stk_frm_size = stkpi->_sys_pg_size + stk_frm_size;
+	stkpi->_stk_frm_size = round_up(stkpi->_sys_pg_size + stk_frm_size, stkpi->_sys_pg_size);
 
 	stkpi->_stkp_tag = STKP_TAG;
 	stkpi->_the_pool.addr_begin = addr;
-	stkpi->_the_pool.addr_end = (void*)round_down((unsigned long) addr + total_size, stkpi->_stk_frm_size);
+	stkpi->_the_pool.addr_end = (void*)round_down((unsigned long)addr + total_size, stkpi->_stk_frm_size);
 
 	lst_new(&stkpi->_free_list);
 
@@ -94,11 +130,11 @@ struct _stkp_impl* _stkp_init(void* addr, unsigned long total_size, unsigned int
 
 		payload_ptr = stkpi->_payload_trunk_addr + i * stkpi->_stk_frm_size;
 
-		rslt = mprotect(payload_ptr, stkpi->_sys_pg_size, PROT_NONE);
-		err_exit(rslt < 0, "mprotect failed with errorcode: %d.", errno);
-
 		stkpi->_node_pool[i]._payload_addr = payload_ptr + stkpi->_sys_pg_size;
 		lst_push_back(&stkpi->_free_list, &stkpi->_node_pool[i]._dln);
+
+		rslt = mprotect(payload_ptr, stkpi->_sys_pg_size, PROT_READ);
+		err_exit(rslt < 0, "mprotect failed with errorcode: %d.", errno);
 	}
 
 	return stkpi;
@@ -111,7 +147,7 @@ struct stkpool* stkp_create(void* addr, struct mm_config* cfg)
 	struct _stkp_impl* stkpi;
 
 	err_exit((!addr || (unsigned long)addr & 7 != 0), "address must be 8-byte aligned.");
-	err_exit(cfg->stk_frm_size >= MIN_STK_SIZE, "stack frame size must be >= %lu", MIN_STK_SIZE);
+	err_exit(cfg->stk_frm_size < MIN_STK_SIZE, "stack frame size must be >= %lu", MIN_STK_SIZE);
 
 	stkpi = _stkp_init(addr, cfg->total_size, cfg->stk_frm_size);
 	err_exit(!stkpi, "stkp init failed @ 0x%p.", addr);
@@ -184,7 +220,7 @@ error_ret:
 	return 0;
 }
 
-void stkp_free(struct stkpool* stkp, void* p)
+long stkp_free(struct stkpool* stkp, void* p)
 {
 	long idx;
 	struct _stkp_impl* stkpi;
@@ -207,8 +243,8 @@ void stkp_free(struct stkpool* stkp, void* p)
 
 	lst_push_front(&stkpi->_free_list, &stkpi->_node_pool[idx]._dln);
 
-	return;
+	return 0;
 error_ret:
-	return;
+	return -1;
 }
 
