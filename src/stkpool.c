@@ -58,16 +58,6 @@ static long __stkp_free_agent(void* alloc, void* p)
 	return stkp_free((struct stkpool*)alloc, p);
 }
 
-struct mm_ops __stkp_ops =
-{
-	.create_func = __stkp_create_agent,
-	.load_func = __stkp_load_agent,
-	.destroy_func = __stkp_destroy_agent,
-
-	.alloc_func = __stkp_alloc_agent,
-	.free_func = __stkp_free_agent,
-};
-
 static inline void _set_payload(struct _stkp_node* node, void* payload)
 {
 	node->_payload_addr = (void*)((unsigned long)payload | node->using);
@@ -77,6 +67,16 @@ static inline void* _get_payload(struct _stkp_node* node)
 {
 	return (void*)(((unsigned long)(node->_payload_addr)) & (~3));
 }
+
+struct mm_ops __stkp_ops =
+{
+	.create_func = __stkp_create_agent,
+	.load_func = __stkp_load_agent,
+	.destroy_func = __stkp_destroy_agent,
+
+	.alloc_func = __stkp_alloc_agent,
+	.free_func = __stkp_free_agent,
+};
 
 static inline struct _stkp_impl* _conv_impl(struct stkpool* stkp)
 {
@@ -116,7 +116,10 @@ struct _stkp_impl* _stkp_init(void* addr, unsigned long total_size, unsigned int
 	while(1)
 	{
 		if(cur_ptr + stkpi->_stk_frm_cnt * sizeof(struct _stkp_node) > stkpi->_the_pool.addr_end - stkpi->_stk_frm_size * stkpi->_stk_frm_cnt)
+		{
+			--stkpi->_stk_frm_cnt;
 			break;
+		}
 
 		++stkpi->_stk_frm_cnt;
 	}
@@ -215,7 +218,7 @@ void* stkp_alloc(struct stkpool* stkp)
 
 	nd->using = 1;
 
-	return nd->_payload_addr;
+	return _get_payload(nd);
 error_ret:
 	return 0;
 }

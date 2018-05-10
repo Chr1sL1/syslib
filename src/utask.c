@@ -102,12 +102,12 @@ struct utask* utsk_create(task_function tfunc)
 	tsk = mm_cache_alloc(__utsk_zone);
 	if(!tsk) goto error_ret;
 
-	tsk->_utsk.stk_size = mm_get_cfg()->mm_cfg[MM_AREA_STACK].stk_frm_size;
+	tsk->_utsk.stk_size = round_down(mm_get_cfg()->mm_cfg[MM_AREA_STACK].stk_frm_size - 16, 16);
 	tsk->_utsk.tsk_func = tfunc;
 	tsk->_magic_number = UTASK_MAGIC_NUM;
 	tsk->_task_state = uts_inited;
 
-	tsk->_utsk.stk = mm_area_alloc(MM_AREA_STACK, 0);
+	tsk->_utsk.stk = mm_area_alloc(tsk->_utsk.stk_size, MM_AREA_STACK);
 	if(!tsk->_utsk.stk) goto error_ret;
 
 	return &tsk->_utsk;

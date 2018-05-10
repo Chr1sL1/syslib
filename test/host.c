@@ -30,7 +30,7 @@
 const char* share_memory_name = "test_shm_17x";
 static const char* alpha_beta = "abcdefghijlmnopqrstuvwxyz1234567890";
 
-long test_arr[10];
+long test_arr[100];
 
 char* mmp_buf;
 char* pgp_buf;
@@ -1496,7 +1496,7 @@ int main(void)
 	memset(&bs, 0, sizeof(bs));
 	set_bit(&bs, 100);
 
-	rslt = init_mm(19);
+	rslt = init_mm(30);
 	if(rslt < 0) goto error_ret;
 
 //	net_test_server(1);
