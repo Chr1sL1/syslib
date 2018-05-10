@@ -1,24 +1,15 @@
 #ifndef __utask_h__
 #define __utask_h__
 
+typedef void* utask_t;
+typedef void (*task_function)(utask_t, void*);
 
-struct utask;
-
-typedef void (*task_function)(struct utask*, void*);
-
-struct utask
-{
-	void* stk;
-	long stk_size;
-	task_function tsk_func;
-};
-
-struct utask* utsk_create(task_function tfunc);
-void utsk_destroy(struct utask* tsk);
+utask_t utsk_create(task_function tfunc);
+void utsk_destroy(utask_t tsk);
 //
 
-int utsk_run(struct utask* tsk, void* udata);
-int utsk_yield(struct utask* tsk);
-int utsk_resume(struct utask* tsk);
+int utsk_run(utask_t tsk, void* udata);
+int utsk_yield(utask_t tsk);
+int utsk_resume(utask_t tsk);
 
 #endif	// __utask_h__

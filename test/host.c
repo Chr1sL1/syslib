@@ -206,7 +206,7 @@ void test_lst(void)
 	printf("\n");
 }
 
-void tfun(struct utask* t, void* p)
+void tfun(utask_t t, void* p)
 {
 	for(int i = 0; i < sizeof(test_arr) / sizeof(long); i++)
 	{
@@ -222,7 +222,7 @@ void tfun(struct utask* t, void* p)
 void test_task(void)
 {
 	unsigned long r1 = 0, r2 = 0;
-	struct utask* tsk = utsk_create(tfun);
+	utask_t tsk = utsk_create(tfun);
 	if(!tsk) goto error_ret;
 
 	for(int i = 0; i < sizeof(test_arr) / sizeof(long); i++)
