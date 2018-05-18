@@ -208,9 +208,13 @@ void test_lst(void)
 
 void tfun(utask_t t, void* p)
 {
+	int value = 0;
+
 	for(int i = 0; i < sizeof(test_arr) / sizeof(long); i++)
 	{
 		printf("arr[i] = %ld\n", test_arr[i]);
+
+		value = test_arr[i];
 
 		if(i % 2 == 0)
 			utsk_yield(t);
@@ -1452,28 +1456,40 @@ void clr_bit(struct bit_set* bs, int bit)
 
 void test_timer_func(void* p)
 {
-	printf("trigger tick: %lu, tick: %lu\n", (unsigned long)p, dbg_current_tick());	
+	printf("trigger tick: %lu, tick: %lu, diff: %ld\n", (unsigned long)p, dbg_current_tick(), (long)p - (long)dbg_current_tick());	
 }
 
 void test_timer(void)
 {
 	int rslt = 0;
+	int max = (1 << 20);
+	int i = 0;
+	unsigned long t1, t2, sum;
 	rslt = init_timer();
 
 	err_exit(rslt < 0, "init timer failed.");
 
+	for(int i = 0; i < 10; ++i)
+	{
+		int delay_tick = random() % max;
+		printf("delay_tick: %d.\n", delay_tick);
+//		t1 = rdtsc();
+		add_timer(delay_tick, test_timer_func, (void*)delay_tick);
+//		t2 = rdtsc();
 
-	add_timer(1, test_timer_func, (void*)1);
-	add_timer(250, test_timer_func, (void*)250);
-	add_timer(256, test_timer_func, (void*)256);
-	add_timer(647, test_timer_func, (void*)647);
-	add_timer(18474, test_timer_func, (void*)18474);
+//		sum += (t2 - t1);
+	}
 
+//	printf("add cycle: %ld.\n", sum / 100);
 
-	while(1)
+	for(; i < max; ++i)
 	{
 		on_tick();
+
+//		printf("cycle: %ld.\n");
 	}
+
+	printf("%ld.\n", i);
 
 error_ret:
 	return;
@@ -1496,13 +1512,13 @@ int main(void)
 	memset(&bs, 0, sizeof(bs));
 	set_bit(&bs, 100);
 
-	rslt = init_mm(33);
+	rslt = init_mm(116);
 	if(rslt < 0) goto error_ret;
 
 //	net_test_server(1);
 
-	test_task();
-//	test_timer();
+//	test_task();
+	test_timer();
 
 	mm_uninitialize();
 

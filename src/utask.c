@@ -1,5 +1,4 @@
 #include "utask.h"
-#include "rbtree.h"
 #include "misc.h"
 #include "mmspace.h"
 #include <stdio.h>
@@ -56,7 +55,6 @@ struct _utask_impl
 
 	struct __reg_values _saved_regs;
 	long _magic_number;
-	struct rbnode _rbnode;
 };
 
 extern void asm_run_task(struct _utask_impl* tsk, void* udata);
