@@ -1469,15 +1469,17 @@ void test_timer(void)
 
 	err_exit(rslt < 0, "init timer failed.");
 
+//	add_timer((1 << 15), test_timer_func, (void*)(1<<15));
+
 	for(int i = 0; i < 10; ++i)
 	{
 		int delay_tick = random() % max;
 		printf("delay_tick: %d.\n", delay_tick);
-//		t1 = rdtsc();
+		t1 = rdtsc();
 		add_timer(delay_tick, test_timer_func, (void*)delay_tick);
-//		t2 = rdtsc();
+		t2 = rdtsc();
 
-//		sum += (t2 - t1);
+		sum += (t2 - t1);
 	}
 
 //	printf("add cycle: %ld.\n", sum / 100);
@@ -1489,7 +1491,7 @@ void test_timer(void)
 //		printf("cycle: %ld.\n");
 	}
 
-	printf("%ld.\n", i);
+//	printf("%ld.\n", i);
 
 error_ret:
 	return;
@@ -1512,7 +1514,7 @@ int main(void)
 	memset(&bs, 0, sizeof(bs));
 	set_bit(&bs, 100);
 
-	rslt = init_mm(116);
+	rslt = init_mm(117);
 	if(rslt < 0) goto error_ret;
 
 //	net_test_server(1);

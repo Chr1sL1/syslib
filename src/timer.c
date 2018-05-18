@@ -21,8 +21,10 @@
 #define TV_SET_SIZE		(1UL << TV_SET_BITS)
 
 #define TV_SET0_MASK	((1UL << TV_SET0_BITS) - 1)
-#define TV_SET_MASK(N)	((1UL << (TV_SET0_BITS + N * TV_SET_BITS)) - 1)
+//#define TV_SET_MASK(N)	((1UL << (TV_SET0_BITS + N * TV_SET_BITS)) - 1)
 #define TV_SETN_MASK	((1UL << TV_SET_BITS) - 1)
+
+#define TV_SET_MASK(N)	(((1UL << TV_SET_BITS) - 1) << (TV_SET0_BITS + N * TV_SET_BITS))
 
 #define TV_SET_CNT		(4)
 
@@ -82,6 +84,12 @@ int init_timer(void)
 {
 	err_exit(_timer_node_try_restore_zone() < 0, "init_timer: restore zone failed.");
 
+	printf("%x\n", TV_SET_MASK(3));
+	printf("%x\n", TV_SET_MASK(2));
+	printf("%x\n", TV_SET_MASK(1));
+	printf("%x\n", TV_SET_MASK(0));
+
+
 	__the_timer_wheel._current_tick = 0;
 
 	for (int i = 0; i < TV_SET0_SIZE; ++i)
@@ -115,16 +123,21 @@ static void _add_timer(struct timer_node* tn)
 	else
 	{
 		int idx;
-		long r = (diff_tick >> TV_SET0_BITS);
 
-		if(r >> ((TV_SET_CNT - 1) * TV_SET_BITS) > 0)
-			lst_push_back(&__the_timer_wheel._tv_set[3]._list[r >> ((TV_SET_CNT - 1) * TV_SET_BITS)], &tn->_lln);
-		else if((r >> ((TV_SET_CNT - 2) * TV_SET_BITS)) & TV_SETN_MASK > 0)
-			lst_push_back(&__the_timer_wheel._tv_set[2]._list[(r >> ((TV_SET_CNT - 2) * TV_SET_BITS)) & TV_SETN_MASK], &tn->_lln);
-		else if((r >> ((TV_SET_CNT - 3) * TV_SET_BITS)) & TV_SETN_MASK > 0)
-			lst_push_back(&__the_timer_wheel._tv_set[1]._list[(r >> ((TV_SET_CNT - 3) * TV_SET_BITS)) & TV_SETN_MASK], &tn->_lln);
-		else if(r & TV_SETN_MASK > 0)
-			lst_push_back(&__the_timer_wheel._tv_set[0]._list[r & TV_SETN_MASK], &tn->_lln);
+		for(int i = TV_SET_CNT - 1; i >= 0; --i)
+		{
+			idx = ((diff_tick & TV_SET_MASK(i)) >> (TV_SET_BITS * i + TV_SET0_BITS));
+			if(idx != 0)
+			{
+				lst_push_back(&__the_timer_wheel._tv_set[i]._list[idx & TV_SETN_MASK], &tn->_lln);
+				break;
+			}
+		}
+
+
+//		if(diff_tick & TV_SET4_MASK)
+//			lst_push_back(&__the_timer_wheel._tv_set[3]._list[(__the_timer_wheel._tv_set[3]._current_idx + diff_tick & TV_SET4_MASK) & ], &tn->_lln);
+
 
 //		for (int i = 0; i < TV_SET_CNT; ++i)
 //		{
@@ -193,6 +206,47 @@ void del_timer(timer_handle_t the_timer)
 error_ret:
 	return;
 }
+
+static void __casade0(void)
+{
+	int idx;
+	int list_idx = ((__the_timer_wheel._current_tick & TV_SET_MASK(0)) >> TV_SET0_BITS);
+
+	struct dlnode* node = lst_first(&__the_timer_wheel._tv_set[0]._list[list_idx]);
+	while (node != lst_last(&__the_timer_wheel._tv_set[0]._list[list_idx]))
+	{
+		struct dlnode* cur_node = node;
+		node = node->next;
+
+		struct timer_node* tn = (struct timer_node*)((unsigned long)cur_node - (unsigned long)&((struct timer_node*)(0))->_lln);
+		lst_remove_node(cur_node);
+
+		idx = ((tn->_run_tick - __the_timer_wheel._current_tick) & TV_SET0_MASK);
+
+		lst_push_back(&__the_timer_wheel._tv_set0[idx], cur_node);
+	}
+}
+
+static void __casade(int i)
+{
+	int idx;
+	int list_idx = ((__the_timer_wheel._current_tick & TV_SET_MASK(i)) >> (TV_SET0_BITS + i * TV_SET_BITS));
+
+	struct dlnode* node = lst_first(&__the_timer_wheel._tv_set[i + 1]._list[list_idx]);
+	while (node != lst_last(&__the_timer_wheel._tv_set[i + 1]._list[list_idx]))
+	{
+		struct dlnode* cur_node = node;
+		node = node->next;
+
+		struct timer_node* tn = (struct timer_node*)((unsigned long)cur_node - (unsigned long)&((struct timer_node*)(0))->_lln);
+		lst_remove_node(cur_node);
+
+		idx = ((tn->_run_tick - __the_timer_wheel._current_tick) & TV_SETN_MASK);
+
+		lst_push_back(&__the_timer_wheel._tv_set[i]._list[idx], cur_node);
+	}
+}
+
 
 static void _casade(void)
 {
@@ -270,7 +324,10 @@ void on_tick(void)
 
 	if (__the_timer_wheel._current_tick > 0 && (__the_timer_wheel._current_tick & TV_SET0_MASK) == 0)
 	{
-		_casade();
+		__casade0();
+		__casade(0);
+		__casade(1);
+		__casade(2);
 	}
 
 	++__the_timer_wheel._current_tick;
