@@ -1462,36 +1462,36 @@ void test_timer_func(void* p)
 void test_timer(void)
 {
 	int rslt = 0;
-	int max = (1 << 20);
-	int i = 0;
-	unsigned long t1, t2, sum;
+	unsigned int max = (1 << 28);
+	unsigned int i = 0;
+	unsigned long t1, t2, sum = 0;
+	unsigned total_count = 100000;
 	rslt = init_timer();
 
 	err_exit(rslt < 0, "init timer failed.");
 
-//	add_timer((1 << 15), test_timer_func, (void*)(1<<15));
-
-	for(int i = 0; i < 10; ++i)
+	for(int i = 0; i < total_count; ++i)
 	{
-		int delay_tick = random() % max;
-		printf("delay_tick: %d.\n", delay_tick);
-		t1 = rdtsc();
+		unsigned int delay_tick = random() % max;
 		add_timer(delay_tick, test_timer_func, (void*)delay_tick);
+	}
+
+//	printf("add cycle: %ld.\n", sum / 100);
+//
+	printf("max: %lx\n",max);
+
+	for(; i < max; ++i)
+	{
+		t1 = rdtsc();
+		on_tick();
 		t2 = rdtsc();
 
 		sum += (t2 - t1);
 	}
 
-//	printf("add cycle: %ld.\n", sum / 100);
 
-	for(; i < max; ++i)
-	{
-		on_tick();
-
-//		printf("cycle: %ld.\n");
-	}
-
-//	printf("%ld.\n", i);
+	printf("tick: %lx.\n", dbg_current_tick());
+	printf("avg cycle: %lu\n", sum / max);
 
 error_ret:
 	return;
@@ -1507,14 +1507,14 @@ int main(void)
 //	printf("%lu\n", i);
 //
 //	unsigned long seed = 0;//time(0);
-	unsigned long seed = time(0);
+	unsigned long seed = 118292;
 	srandom(seed);
 
 	struct bit_set bs;
 	memset(&bs, 0, sizeof(bs));
 	set_bit(&bs, 100);
 
-	rslt = init_mm(117);
+	rslt = init_mm(25);
 	if(rslt < 0) goto error_ret;
 
 //	net_test_server(1);
