@@ -33,7 +33,7 @@
 struct timer_node
 {
 	int _magic;
-	int _remove_on_trigger;
+	int _run_once;
 
 	unsigned long _run_tick;
 	timer_func_t _callback_func;
@@ -136,7 +136,7 @@ static inline void _add_timer(struct timer_node* tn)
 }
 
 
-timer_handle_t add_timer(unsigned int delay_tick, timer_func_t callback_func, int remove_on_trigger, void* param)
+timer_handle_t add_timer(unsigned int delay_tick, timer_func_t callback_func, int rune_once, void* param)
 {
 	struct timer_node* _node = NULL;
 
@@ -149,7 +149,7 @@ timer_handle_t add_timer(unsigned int delay_tick, timer_func_t callback_func, in
 	_node->_run_tick = __the_timer_wheel._current_tick + delay_tick;
 	_node->_callback_func = callback_func;
 	_node->_func_param = param;
-	_node->_remove_on_trigger = remove_on_trigger;
+	_node->_run_once = rune_once;
 	lst_clr(&_node->_lln);
 
 	_add_timer(_node);
@@ -240,7 +240,7 @@ void on_tick(void)
 
 		(*tn->_callback_func)(tn->_func_param);
 
-		if(tn->_remove_on_trigger)
+		if(tn->_run_once)
 			_del_timer(tn);
 	}
 
