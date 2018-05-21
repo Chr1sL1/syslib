@@ -33,6 +33,7 @@
 struct timer_node
 {
 	int _magic;
+	int _remove_on_trigger;
 
 	unsigned long _run_tick;
 	timer_func_t _callback_func;
@@ -83,10 +84,10 @@ int init_timer(void)
 {
 	err_exit(_timer_node_try_restore_zone() < 0, "init_timer: restore zone failed.");
 
-	printf("mask3: %x\n", TV_SET_MASK(3));
-	printf("mask2: %x\n", TV_SET_MASK(2));
-	printf("mask1: %x\n", TV_SET_MASK(1));
-	printf("mask0: %x\n", TV_SET_MASK(0));
+//	printf("mask3: %x\n", TV_SET_MASK(3));
+//	printf("mask2: %x\n", TV_SET_MASK(2));
+//	printf("mask1: %x\n", TV_SET_MASK(1));
+//	printf("mask0: %x\n", TV_SET_MASK(0));
 
 
 	__the_timer_wheel._current_tick = 0;
@@ -109,7 +110,7 @@ error_ret:
 	return -1;
 }
 
-static void _add_timer(struct timer_node* tn)
+static inline void _add_timer(struct timer_node* tn)
 {
 	long diff_tick = tn->_run_tick - __the_timer_wheel._current_tick;
 
@@ -135,7 +136,7 @@ static void _add_timer(struct timer_node* tn)
 }
 
 
-timer_handle_t add_timer(unsigned int delay_tick, timer_func_t callback_func, void* param)
+timer_handle_t add_timer(unsigned int delay_tick, timer_func_t callback_func, int remove_on_trigger, void* param)
 {
 	struct timer_node* _node = NULL;
 
@@ -148,6 +149,7 @@ timer_handle_t add_timer(unsigned int delay_tick, timer_func_t callback_func, vo
 	_node->_run_tick = __the_timer_wheel._current_tick + delay_tick;
 	_node->_callback_func = callback_func;
 	_node->_func_param = param;
+	_node->_remove_on_trigger = remove_on_trigger;
 	lst_clr(&_node->_lln);
 
 	_add_timer(_node);
@@ -157,7 +159,7 @@ error_ret:
 	return 0;
 }
 
-static void _del_timer(struct timer_node* tn)
+static inline void _del_timer(struct timer_node* tn)
 {
 	lst_remove_node(&tn->_lln);
 	mm_cache_free(__the_timer_node_zone, tn);
@@ -176,7 +178,7 @@ error_ret:
 	return;
 }
 
-static void __casade0(void)
+static inline  void __casade0(void)
 {
 	int list_idx = ((__the_timer_wheel._current_tick & TV_SET_MASK_IDX(0)) >> TV_SET0_BITS);
 
@@ -238,7 +240,8 @@ void on_tick(void)
 
 		(*tn->_callback_func)(tn->_func_param);
 
-		_del_timer(tn);
+		if(tn->_remove_on_trigger)
+			_del_timer(tn);
 	}
 
 

@@ -1476,7 +1476,7 @@ void test_timer(void)
 	for(int i = 0; i < total_count; ++i)
 	{
 		unsigned int delay_tick = random() % max;
-		add_timer(delay_tick, test_timer_func, (void*)delay_tick);
+		add_timer(delay_tick, test_timer_func, 1, (void*)delay_tick);
 	}
 
 //	printf("add cycle: %ld.\n", sum / 100);
