@@ -1,8 +1,8 @@
 #ifndef __timer_h__
 #define __timer_h__
 
-typedef void(*timer_func_t)(void*);
 typedef void* timer_handle_t;
+typedef void(*timer_func_t)(timer_handle_t, void*);
 
 int init_timer(void);
 

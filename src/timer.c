@@ -36,6 +36,7 @@ struct timer_node
 	int _run_once;
 
 	unsigned long _run_tick;
+	unsigned long _delay_tick;
 	timer_func_t _callback_func;
 	void* _func_param;
 
@@ -127,7 +128,7 @@ static inline void _add_timer(struct timer_node* tn)
 			idx = ((diff_tick & TV_SET_MASK_IDX(i)) >> TV_SET_SHIFT_BITS(i));
 			if(idx > 0)
 			{
-//				printf("add to [%d:%d]\n", i, idx);
+				printf("add to [%d:%d]\n", i, idx);
 				lst_push_back(&__the_timer_wheel._tv_set[i]._list[idx], &tn->_lln);
 				break;
 			}
@@ -146,6 +147,7 @@ timer_handle_t add_timer(unsigned int delay_tick, timer_func_t callback_func, in
 	err_exit(!_node, "add_timer: alloc timer node failed.");
 
 	_node->_magic = TIMER_NODE_TYPE_MAGIC;
+	_node->_delay_tick = delay_tick;
 	_node->_run_tick = __the_timer_wheel._current_tick + delay_tick;
 	_node->_callback_func = callback_func;
 	_node->_func_param = param;
@@ -238,12 +240,17 @@ void on_tick(void)
 
 		struct timer_node* tn = (struct timer_node*)((unsigned long)cur_node - (unsigned long)&((struct timer_node*)(0))->_lln);
 
-		(*tn->_callback_func)(tn->_func_param);
+		(*tn->_callback_func)(tn, tn->_func_param);
 
 		if(tn->_run_once)
 			_del_timer(tn);
+		else
+		{
+			lst_remove_node(cur_node);
+			tn->_run_tick = __the_timer_wheel._current_tick + tn->_delay_tick;
+			_add_timer(tn);
+		}
 	}
-
 
 	++__the_timer_wheel._current_tick;
 }

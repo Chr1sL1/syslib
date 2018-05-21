@@ -1462,43 +1462,51 @@ void test_timer_func(void* p)
 		printf("trigger tick: %lx, tick: %lx, diff: %ld\n", (unsigned long)p, dbg_current_tick(), diff_tick);	
 }
 
+
+static void _task_func(utask_t task, void* param)
+{
+	for(int i = 0; i < 100; ++i)
+	{
+		printf("%d\n", i);
+		utsk_yield(task);
+	}
+}
+
+static void _test_task_timer(timer_handle_t t, void* p)
+{
+	printf("on timer.\n");
+//	utask_t task = (utask_t*)p;
+//	utsk_resume(task);
+}
+
+
 void test_timer(void)
 {
 	int rslt = 0;
 	unsigned int max = (1 << 28);
-	unsigned int i = 0;
 	unsigned long t1, t2, sum = 0;
 	unsigned total_count = 100000;
-	rslt = init_timer();
+	utask_t utask;
 
+	rslt = init_timer();
 	err_exit(rslt < 0, "init timer failed.");
 
-	for(int i = 0; i < total_count; ++i)
+	utask = utsk_create(_task_func);
+	err_exit(!utask, "create task failed.");
+
+	add_timer(10, _test_task_timer, 0, utask);
+
+//	utsk_run(utask, NULL);
+
+	for(int i = 0; i < 1000000000; ++i)
 	{
-		unsigned int delay_tick = random() % max;
-		add_timer(delay_tick, test_timer_func, 1, (void*)delay_tick);
+		printf("i = %d\n", i);
+//		on_tick();
+		usleep(100);
 	}
-
-//	printf("add cycle: %ld.\n", sum / 100);
-//
-	printf("max: %lx\n",max);
-
-	for(; i < max; ++i)
-	{
-		t1 = rdtsc();
-		on_tick();
-		t2 = rdtsc();
-
-		sum += (t2 - t1);
-	}
-
-
-	printf("tick: %lx.\n", dbg_current_tick());
-	printf("avg cycle: %lu\n", sum / max);
 
 error_ret:
 	return;
-
 }
 
 
@@ -1516,7 +1524,7 @@ int main(void)
 	memset(&bs, 0, sizeof(bs));
 	set_bit(&bs, 100);
 
-	rslt = init_mm(250);
+	rslt = init_mm(255);
 	if(rslt < 0) goto error_ret;
 
 //	net_test_server(1);
