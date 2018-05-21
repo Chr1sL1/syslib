@@ -1456,7 +1456,10 @@ void clr_bit(struct bit_set* bs, int bit)
 
 void test_timer_func(void* p)
 {
-	printf("trigger tick: %lu, tick: %lu, diff: %ld\n", (unsigned long)p, dbg_current_tick(), (long)p - (long)dbg_current_tick());	
+	long diff_tick = (long)p - (long)dbg_current_tick();
+
+	if(diff_tick != 0)
+		printf("trigger tick: %lx, tick: %lx, diff: %ld\n", (unsigned long)p, dbg_current_tick(), diff_tick);	
 }
 
 void test_timer(void)
@@ -1506,15 +1509,14 @@ int main(void)
 //	unsigned long i = test_asm_align8(10);
 //	printf("%lu\n", i);
 //
-//	unsigned long seed = 0;//time(0);
-	unsigned long seed = 118292;
+	unsigned long seed = time(0);
 	srandom(seed);
 
 	struct bit_set bs;
 	memset(&bs, 0, sizeof(bs));
 	set_bit(&bs, 100);
 
-	rslt = init_mm(25);
+	rslt = init_mm(250);
 	if(rslt < 0) goto error_ret;
 
 //	net_test_server(1);

@@ -113,7 +113,7 @@ static void _add_timer(struct timer_node* tn)
 {
 	long diff_tick = tn->_run_tick - __the_timer_wheel._current_tick;
 
-	if (diff_tick <= TV_SET0_SIZE)
+	if (diff_tick < TV_SET0_SIZE)
 	{
 		lst_push_back(&__the_timer_wheel._tv_set0[diff_tick & TV_SET0_MASK], &tn->_lln);
 	}
