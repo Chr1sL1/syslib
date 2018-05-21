@@ -113,7 +113,10 @@ error_ret:
 
 static inline void _add_timer(struct timer_node* tn)
 {
+	long cur_idx;
 	long diff_tick = tn->_run_tick - __the_timer_wheel._current_tick;
+
+//	printf("diff tick: %d\n", diff_tick);
 
 	if (diff_tick < TV_SET0_SIZE)
 	{
@@ -128,7 +131,10 @@ static inline void _add_timer(struct timer_node* tn)
 			idx = ((diff_tick & TV_SET_MASK_IDX(i)) >> TV_SET_SHIFT_BITS(i));
 			if(idx > 0)
 			{
-				printf("add to [%d:%d]\n", i, idx);
+				cur_idx = ((__the_timer_wheel._current_tick & TV_SET_MASK_IDX(i)) >> TV_SET_SHIFT_BITS(i));
+
+				idx = ((idx + cur_idx) & TV_SETN_MASK);
+//				printf("add to [%d:%d]\n", i, idx);
 				lst_push_back(&__the_timer_wheel._tv_set[i]._list[idx], &tn->_lln);
 				break;
 			}

@@ -1472,11 +1472,14 @@ static void _task_func(utask_t task, void* param)
 	}
 }
 
+static long __last_tm = 0;
+
 static void _test_task_timer(timer_handle_t t, void* p)
 {
-	printf("on timer.\n");
-//	utask_t task = (utask_t*)p;
-//	utsk_resume(task);
+	printf("on timer: %ld\n", dbg_current_tick() - __last_tm);
+	__last_tm = dbg_current_tick();
+	utask_t task = (utask_t*)p;
+	utsk_resume(task);
 }
 
 
@@ -1494,15 +1497,15 @@ void test_timer(void)
 	utask = utsk_create(_task_func);
 	err_exit(!utask, "create task failed.");
 
-	add_timer(10, _test_task_timer, 0, utask);
+	add_timer(1000, _test_task_timer, 0, utask);
 
-//	utsk_run(utask, NULL);
+	utsk_run(utask, NULL);
 
-	for(int i = 0; i < 1000000000; ++i)
+	for(int i = 0; i < 100000; ++i)
 	{
-		printf("i = %d\n", i);
-//		on_tick();
-		usleep(100);
+//		printf("i = %d\n", i);
+		on_tick();
+		usleep(1000);
 	}
 
 error_ret:
@@ -1524,7 +1527,7 @@ int main(void)
 	memset(&bs, 0, sizeof(bs));
 	set_bit(&bs, 100);
 
-	rslt = init_mm(255);
+	rslt = init_mm(163);
 	if(rslt < 0) goto error_ret;
 
 //	net_test_server(1);
